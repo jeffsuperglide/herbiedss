@@ -1,0 +1,35 @@
+[project]
+    name = "herbiedss"
+    readme = "README.md"
+    version = "0.1.0"
+    description = "Fetch NOAA weather model output (HRRR, GFS, GEFS) with Herbie, reproject to USACE SHG or NWS HRAP hydrologic grids, clip to a watershed boundary, and write the result to HEC-DSS for use in HEC-HMS/HEC-RAS."
+    keywords = [
+        "herbie",
+        "hec-dss",
+        "hydrology",
+        "grib",
+        "shg",
+        "hrap",
+        "hrrr",
+        "gfs",
+        "noaa",
+    ]
+    authors = [{ name = "Jeff Gregory", email = "jeffrey.s.gregory@usace.army.mil" }]
+    requires-python = ">=3.13"
+    dependencies = [
+        "geopandas>=1.1.4",
+        "hecdss>=0.1.32",
+        "herbie-data>=2026.3.0",
+        "pyproj>=3.7.2",
+        "rasterio>=1.5.1",
+        "rich>=15.0.0",
+        "rioxarray>=0.23.0",
+        "typer>=0.27.1",
+    ]
+
+[project.scripts]
+    herbiedss = "herbiedss.main:app"
+
+[build-system]
+    requires = ["uv_build>=0.11.32,<0.12.0"]
+    build-backend = "uv_build"
