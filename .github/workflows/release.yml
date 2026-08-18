@@ -51,7 +51,7 @@ jobs:
       id-token: write   # required for Trusted Publishing (OIDC) — no secrets needed
     steps:
       - name: Install uv
-        uses: astral-sh/setup-uv@v9
+        uses: astral-sh/setup-uv@10
         with:
           enable-cache: false
 
