@@ -49,7 +49,7 @@ jobs:
       name: pypi
       url: https://pypi.org/p/herbiedss
     permissions:
-      id-token: write   # required for Trusted Publishing (OIDC) — no secrets needed
+      id-token: write # required for Trusted Publishing (OIDC) — no secrets needed
       contents: read # for actions/checkout, if you're in a private repo
     steps:
       - name: astral-sh/setup-uv
@@ -68,4 +68,3 @@ jobs:
 
       - name: Publish to PyPI
         run: uv publish
-        
