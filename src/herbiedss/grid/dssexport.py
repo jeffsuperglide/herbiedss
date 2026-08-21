@@ -260,7 +260,7 @@ def _extract_grid_and_metadata(
     # supports, since the source CRS comes from `da.herbie.crs` generically
     # rather than being hardcoded per model. ---
     if grid_system is not None:
-        target_crs, cellsize = get_target_crs_and_cellsize(grid_system)
+        target_crs, cellsize, grid_type = get_target_crs_and_cellsize(grid_system)
         da = reproject_to_grid(da, grid_system)
         if boundary_path is not None:
             da = clip_to_boundary(da, boundary_path)
@@ -268,6 +268,7 @@ def _extract_grid_and_metadata(
         meta["grid_system"] = grid_system.upper()
         meta["target_crs"] = target_crs.to_wkt()
         meta["cell_size"] = cellsize
+        meta["grid_type"] = grid_type
 
         # DSS grid records key off the lower-left cell index in the target
         # grid's own coordinate system, not lat/lon -- capture x/y bounds
@@ -555,10 +556,11 @@ def dssexport(
                 # installed hecdss record actually exposes. Confirm the real
                 # attribute names for your hecdss version.
                 for attr_name, value in {
+                    "type": meta["grid_type"],
                     # "dataUnits": meta["units"],
                     # "data_type": "PER-CUM" if meta.get("end_time") else "INST-VAL",
                     # "grid_reference_system": meta.get("grid_system"),
-                    "cell_size": meta.get("cell_size"),
+                    "cellSize": meta.get("cell_size"),
                     # "lowerLeftCellX": meta.get("lower_left_x", meta.get("lon_min")),
                     # "lowerLeftCellY": meta.get("lower_left_y", meta.get("lat_min")),
                     "srsDefinition": meta.get("target_crs"),

@@ -68,15 +68,18 @@ HRAP_PROJ4 = (
     "+x_0=0 +y_0=0 +R=6371200 +units=m +no_defs"
 )
 
+SHG_TYPE_TIME_REF = 420
+HRAP_TYPE_TIME_REF = 430
+
 SHG_CELL_SIZE_M = 2000.0
 HRAP_CELL_SIZE_M = 4762.5
 
 SHG_CRS = pyproj.CRS.from_proj4(SHG_PROJ4)
 HRAP_CRS = pyproj.CRS.from_proj4(HRAP_PROJ4)
 
-_GRID_REGISTRY: dict[GridSystem, tuple[pyproj.CRS, float]] = {
-    "shg": (SHG_CRS, SHG_CELL_SIZE_M),
-    "hrap": (HRAP_CRS, HRAP_CELL_SIZE_M),
+_GRID_REGISTRY: dict[GridSystem, tuple[pyproj.CRS, float, int]] = {
+    "shg": (SHG_CRS, SHG_CELL_SIZE_M, SHG_TYPE_TIME_REF),
+    "hrap": (HRAP_CRS, HRAP_CELL_SIZE_M, HRAP_TYPE_TIME_REF),
 }
 
 # Alternate 1D projected-dim names seen in various GRIB/GRIB2 decodes of
@@ -86,7 +89,7 @@ _ALT_X_DIMS = ("xgrid_0", "west_east", "west_east_stag")
 _ALT_Y_DIMS = ("ygrid_0", "south_north", "south_north_stag")
 
 
-def get_target_crs_and_cellsize(grid: GridSystem) -> tuple[pyproj.CRS, float]:
+def get_target_crs_and_cellsize(grid: GridSystem) -> tuple[pyproj.CRS, float, int]:
     """Look up the target CRS and native cell size for 'shg' or 'hrap'."""
     try:
         return _GRID_REGISTRY[grid]
@@ -236,7 +239,7 @@ def reproject_to_grid(
         The field resampled onto the target grid's CRS at its native cell
         size, with `.rio.crs` set accordingly.
     """
-    target_crs, cellsize = get_target_crs_and_cellsize(grid)
+    target_crs, cellsize, _ = get_target_crs_and_cellsize(grid)
 
     src_crs = _source_crs_from_herbie(da)
     da = _ensure_xy_dims(da, src_crs)
