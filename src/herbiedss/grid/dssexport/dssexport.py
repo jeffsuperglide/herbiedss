@@ -8,9 +8,8 @@ gridded-data record with a pathname derived from the grid's own valid
 time.
 """
 
-from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated
 
 import numpy as np
 import typer
@@ -19,6 +18,12 @@ from hecdss.gridded_data import GriddedData
 from herbie.core import Herbie
 from rich.console import Console
 
+from herbiedss.grid.dssexport.helpers import (
+    DssDataType,
+    DssGridType,
+    _build_dss_pathname,
+    _extract_grid_and_metadata,
+)
 from herbiedss.options import (
     DateOption,
     FxxOption,
@@ -31,11 +36,10 @@ from herbiedss.options import (
     VerboseOption,
 )
 from herbiedss.utils.reproject import (
+    SHG_CELL_SIZE_M,
     GridSystem,
-    clip_to_boundary,
-    get_target_crs_and_cellsize,
-    reproject_to_grid,
 )
+from herbiedss.utils.untis import Units
 from herbiedss.utils.validate import parse_date_values, parse_option_values
 
 app = typer.Typer()
@@ -44,253 +48,6 @@ console = Console()
 error_console = Console(stderr=True, style="bold red")
 
 DEFAULT_DSS = "herbiedss.dss"
-
-
-def _pd_to_datetime(value: Any) -> datetime:
-    """Coerce a numpy/pandas datetime64 scalar into a stdlib datetime (UTC-naive)."""
-    import pandas as pd
-
-    return pd.Timestamp(value).to_pydatetime()
-
-
-def _pd_to_timedelta(value: Any) -> timedelta:
-    """Coerce a numpy/pandas timedelta64 scalar into a stdlib timedelta."""
-    import pandas as pd
-
-    return pd.Timedelta(value).to_pytimedelta()
-
-
-def _dss_time(dt: datetime, *, is_end: bool = False) -> str:
-    """
-    Format a datetime per HEC-DSS grid D/E-part convention: DDMMMYYYY:HHMM (UTC),
-    with midnight as 0000 for a start time and 2400 for an end time.
-
-    Parameters
-    ----------
-    dt : datetime
-        UTC timestamp to format.
-    is_end : bool, optional
-        If True, format `dt` as the end of an interval (D-part convention
-        represents a midnight end time as "2400" on the previous calendar
-        day rather than "0000" on the current day). Defaults to False.
-
-    Returns
-    -------
-    str
-        Timestamp formatted as "DDMMMYYYY:HHMM" (month abbreviation
-        upper-cased), e.g. "25DEC2005:1200" or "24DEC2005:2400" for a
-        midnight end time.
-    """
-
-    if is_end and dt.hour == 0 and dt.minute == 0:
-        prev_day = dt - timedelta(days=1)
-        date_part = prev_day.strftime("%d%b%Y").upper()
-        return f"{date_part}:2400"
-    date_part = dt.strftime("%d%b%Y").upper()
-    time_part = dt.strftime("%H%M")
-    return f"{date_part}:{time_part}"
-
-
-def _build_dss_pathname(
-    a_part: str, b_part: str, c_part: str, f_part: str, meta: dict
-) -> str:
-    """
-    Build a DSS grid pathname /A/B/C/D/E/F/ where D and E come from the grid's own
-    start/end time (UTC), formatted DDMMMYYYY:HHMM. E is left blank for instantaneous
-    grids (no GRIB_stepRange / no end_time).
-
-    Parameters
-    ----------
-    a_part : str
-        A-part: grid reference system (e.g. "SHG", "HRAP", or a model name).
-    b_part : str
-        B-part: region, watershed, or location name.
-    c_part : str
-        C-part: data parameter (e.g. "PRECIP", "TMP2M").
-    f_part : str
-        F-part: version or other descriptive label.
-    meta : dict
-        Metadata dictionary produced by `_extract_grid_and_metadata`, used
-        to source the D-part (`meta["start_time"]`) and E-part
-        (`meta["end_time"]`) of the pathname.
-
-    Returns
-    -------
-    str
-        Upper-cased DSS pathname of the form "/A/B/C/D/E/F/". The D-part is
-        the grid's start time and the E-part is its end time, both
-        formatted via `_dss_time`; either is left as an empty string if
-        the corresponding metadata value is missing (e.g. E is blank for
-        instantaneous grids).
-    """
-    start_time = meta.get("start_time")
-    end_time = meta.get("end_time")
-
-    d_part = _dss_time(start_time) if start_time else ""
-    e_part = _dss_time(end_time, is_end=True) if end_time else ""
-
-    return f"/{a_part}/{b_part}/{c_part}/{d_part}/{e_part}/{f_part}/".upper()
-
-
-def _extract_grid_and_metadata(
-    ds: Any,
-    var_name: str | None,
-    *,
-    grid_system: GridSystem | None = None,
-    boundary_path: Path | None = None,
-) -> tuple[np.ndarray, dict]:
-    """
-    Pull a single 2D numpy grid and its georeferencing + timing metadata out of
-    whatever Herbie's .xarray() call returns (a Dataset with one or more variables,
-    or a single DataArray).
-
-    If `grid_system` is given ("shg" or "hrap"), the field is first reprojected
-    from its native model grid (HRRR Lambert Conformal, GFS/GEFS lat-lon, etc.)
-    onto that hydrologic grid, using the CRS Herbie exposes via `da.herbie.crs`.
-    If `boundary_path` is also given, the reprojected field is clipped to that
-    watershed boundary vector file (shapefile/GeoJSON/GeoPackage) after
-    reprojection.
-
-    Parameters
-    ----------
-    ds : Any
-        Object returned by `Herbie.xarray()`: either an `xarray.Dataset`
-        containing one or more variables, or a single `xarray.DataArray`.
-    var_name : str or None
-        Name of the data variable to extract if `ds` is a `Dataset` with
-        multiple variables. If `None`, the first variable in the dataset
-        is used. Ignored if `ds` is already a `DataArray`.
-    grid_system : GridSystem or None, optional
-        Target hydrologic grid ("shg" or "hrap") to reproject the field
-        onto before extracting the final numpy array. If `None`, the
-        field is kept in its native model projection.
-    boundary_path : Path or None, optional
-        Path to a watershed boundary vector file used to clip the
-        reprojected field. Only applied when `grid_system` is also
-        provided, since clipping happens after reprojection.
-
-    Returns
-    -------
-    tuple[numpy.ndarray, dict]
-        A 2-tuple of:
-
-        - A 2D numpy array of the field's values (squeezed from any
-          extra singleton dimensions).
-        - A metadata dictionary including (where available): `variable`,
-          `units`, `long_name`, `dims`, `valid_time`, `start_time`,
-          `end_time`, `center`, native `lat_min`/`lat_max`/`lon_min`/
-          `lon_max`, `source_crs`, and, if `grid_system` was supplied,
-          `grid_system`, `target_crs`, `cell_size`, `lower_left_x`,
-          `lower_left_y`, and final `shape`.
-
-    Raises
-    ------
-    ValueError
-        If `ds` is a `Dataset` with no data variables, if `var_name` is
-        given but not present in the dataset, or if the extracted field
-        cannot be squeezed down to exactly 2 dimensions.
-    """
-    import xarray as xr
-
-    if isinstance(ds, xr.Dataset):
-        data_vars = list(ds.data_vars)
-        if not data_vars:
-            raise ValueError("xarray() returned a Dataset with no data variables.")
-        name = var_name or data_vars[0]
-        if name not in ds.data_vars:
-            raise ValueError(f"Variable '{name}' not found. Available: {data_vars}")
-        da = ds[name]
-    else:
-        da = ds  # already a DataArray
-
-    meta: dict = {
-        "variable": getattr(da, "name", var_name) or "unknown",
-        "units": da.attrs.get("units"),
-        "long_name": da.attrs.get("long_name") or da.attrs.get("GRIB_name"),
-        "dims": da.dims,
-    }
-
-    # --- Timing metadata must be captured from the *original* Herbie output,
-    # before any reprojection touches dims/coords. ---
-    ref_time = da.coords.get("time")
-    step = da.coords.get("step")
-    valid_time = da.coords.get("valid_time")
-
-    if valid_time is not None:
-        meta["valid_time"] = _pd_to_datetime(valid_time.values)
-    elif ref_time is not None and step is not None:
-        meta["valid_time"] = _pd_to_datetime(ref_time.values) + _pd_to_timedelta(
-            step.values
-        )
-    else:
-        meta["valid_time"] = None
-
-    step_range = da.attrs.get("GRIB_stepRange")  # e.g. "5-6" for an accumulated field
-    if step_range and "-" in str(step_range) and ref_time is not None:
-        start_h, end_h = (float(x) for x in str(step_range).split("-"))
-        base = _pd_to_datetime(ref_time.values)
-        meta["start_time"] = base + timedelta(hours=start_h)
-        meta["end_time"] = base + timedelta(hours=end_h)
-    elif meta["valid_time"] is not None:
-        meta["start_time"] = meta["valid_time"]
-        meta["end_time"] = None  # instantaneous grid -> DSS E-part left blank
-
-    try:
-        meta["center"] = da.herbie.center
-    except Exception:  # noqa: BLE001
-        meta["center"] = None
-
-    # --- Native lat/lon bbox, captured before reprojection touches coords. ---
-    lat = da.coords.get("latitude")
-    lon = da.coords.get("longitude")
-    if lat is not None and lon is not None:
-        meta["lat_min"] = float(np.nanmin(lat.values))
-        meta["lat_max"] = float(np.nanmax(lat.values))
-        meta["lon_min"] = float(np.nanmin(lon.values))
-        meta["lon_max"] = float(np.nanmax(lon.values))
-
-    try:
-        meta["source_crs"] = str(da.herbie.crs)
-    except Exception:  # noqa: BLE001
-        meta["source_crs"] = None
-
-    # --- Reproject onto SHG/HRAP (and optionally clip to a watershed) before
-    # squeezing to a plain numpy array. This works for HRRR (Lambert
-    # Conformal), GFS/GEFS (regular lat-lon), or any other model Herbie
-    # supports, since the source CRS comes from `da.herbie.crs` generically
-    # rather than being hardcoded per model. ---
-    if grid_system is not None:
-        target_crs, cellsize, grid_type = get_target_crs_and_cellsize(grid_system)
-        da = reproject_to_grid(da, grid_system)
-        if boundary_path is not None:
-            da = clip_to_boundary(da, boundary_path)
-
-        meta["grid_system"] = grid_system.upper()
-        meta["target_crs"] = target_crs.to_wkt()
-        meta["cell_size"] = cellsize
-        meta["grid_type"] = grid_type
-
-        # DSS grid records key off the lower-left cell index in the target
-        # grid's own coordinate system, not lat/lon -- capture x/y bounds
-        # post-reprojection.
-        x_coord = da.coords.get("x")
-        y_coord = da.coords.get("y")
-        if x_coord is not None and y_coord is not None:
-            meta["lower_left_x"] = float(np.nanmin(x_coord.values))
-            meta["lower_left_y"] = float(np.nanmin(y_coord.values))
-    else:
-        meta["grid_system"] = None
-        meta["target_crs"] = None
-        meta["cell_size"] = None
-
-    grid = np.asarray(da.values)
-    if grid.ndim > 2:
-        grid = grid.squeeze()
-    if grid.ndim != 2:
-        raise ValueError(f"Expected a 2D grid after squeeze, got shape {grid.shape}.")
-
-    meta["shape"] = grid.shape
-    return grid, meta
 
 
 # @app.command()
@@ -318,6 +75,20 @@ def dssexport(
             help="Output HEC-DSS file path.",
         ),
     ] = DEFAULT_DSS,
+    dss_data_type: Annotated[
+        DssDataType,
+        typer.Option(
+            "--dss-data-type",
+            help="A Dss data type.",
+        ),
+    ] = DssDataType.PER_CUM,
+    dss_grid_type: Annotated[
+        DssGridType,
+        typer.Option(
+            "--dss-grid-type",
+            help=f"A DSS data type (types: {DssGridType}).",
+        ),
+    ] = DssGridType.t420,
     apart: Annotated[
         str,
         typer.Option(
@@ -354,7 +125,7 @@ def dssexport(
         ),
     ] = None,
     grid_system: Annotated[
-        GridSystem | None,
+        GridSystem,
         typer.Option(
             "--grid-system",
             help=(
@@ -522,7 +293,7 @@ def dssexport(
                         "search": subset,
                         "remove_grib": remove_grib,
                     }
-                    print(xr_kwargs)
+
                     ds = H.xarray(**xr_kwargs)
                     grid, meta = _extract_grid_and_metadata(
                         ds,
@@ -536,7 +307,22 @@ def dssexport(
                     )
                     continue
 
-                dss_path = _build_dss_pathname(apart, bpart, cpart, fpart, meta)
+                # check DSS parts and create the path
+                _apart = grid_system.upper() if len(apart) <= 0 else apart
+                _bpart = (
+                    boundary_file.name.replace(boundary_file.suffix, "")
+                    if boundary_file is not None and len(bpart) <= 0
+                    else bpart
+                )
+                _cpart = meta["long_name"] if len(cpart) <= 0 else cpart
+                if "precipitation" in _cpart.lower():
+                    _cpart = "PRECIP"
+                _fpart = f"{model}-{product}-{hr:03d}".upper()
+
+                dss_path = _build_dss_pathname(_apart, _bpart, _cpart, _fpart, meta)
+
+                # convert the units
+                meta["units"] = Units().to_preferred(meta["units"])
 
                 console.print(
                     f"[cyan]{date} F{hr:03d}[/cyan] grid shape={meta['shape']} "
@@ -555,21 +341,29 @@ def dssexport(
                 # attach whatever additional metadata fields the
                 # installed hecdss record actually exposes. Confirm the real
                 # attribute names for your hecdss version.
+                # datatype = dss_dtype
                 for attr_name, value in {
-                    "type": meta["grid_type"],
-                    # "dataUnits": meta["units"],
-                    # "data_type": "PER-CUM" if meta.get("end_time") else "INST-VAL",
+                    "type": dss_grid_type.value,
+                    "dataUnits": meta["units"],
+                    "dataType": dss_data_type.code,
                     # "grid_reference_system": meta.get("grid_system"),
-                    "cellSize": meta.get("cell_size"),
-                    # "lowerLeftCellX": meta.get("lower_left_x", meta.get("lon_min")),
-                    # "lowerLeftCellY": meta.get("lower_left_y", meta.get("lat_min")),
+                    "cellSize": meta.get("cell_size", SHG_CELL_SIZE_M),
+                    "lowerLeftCellX": meta.get("lower_left_x", meta.get("lon_min")),
+                    "lowerLeftCellY": meta.get("lower_left_y", meta.get("lat_min")),
+                    "numberOfCellsY": meta.get("sizes", 0)[0],
+                    "numberOfCellsX": meta.get("sizes", 0)[-1],
+                    "maxDataValue": meta.get("max_data_value", 0.0),
+                    "minDataValue": meta.get("min_data_value", 0.0),
+                    "meanDataValue": meta.get("mean_data_value", 0.0),
+                    "nullValue": meta.get("missing_value", 3.4028234663852886e38),
                     "srsDefinition": meta.get("target_crs"),
                 }.items():
                     if value is not None and hasattr(record, attr_name):
                         setattr(record, attr_name, value)
 
                 try:
-                    dss.put(record)
+                    status = dss.put(record)
+                    error_console.print(f"DSS put() status is {status}.")
                 except Exception as exc:  # noqa: BLE001
                     error_console.print(f"{date} F{hr:03d}: dss.put() failed: {exc}")
                     continue
