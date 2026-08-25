@@ -59,24 +59,38 @@ from rasterio.enums import Resampling
 
 GridSystem = Literal["shg", "hrap"]
 
+# SHG_PROJ4 = (
+#     "+proj=aea +lat_1=29.5 +lat_2=45.5 +lat_0=23 +lon_0=-96 "
+#     "+x_0=0 +y_0=0 +datum=NAD83 +units=m +no_defs"
+# )
 SHG_PROJ4 = (
-    "+proj=aea +lat_1=29.5 +lat_2=45.5 +lat_0=23 +lon_0=-96 "
-    "+x_0=0 +y_0=0 +datum=NAD83 +units=m +no_defs"
+    "+proj=aea +lat_0=23 +lon_0=-96 +lat_1=29.5 +lat_2=45.5 "
+    "+x_0=0 +y_0=0 +datum=NAD83 +units=m +no_defs +type=crs"
 )
+SHG_EPSG = "EPSG:5070"
+
 HRAP_PROJ4 = (
     "+proj=stere +lat_0=90 +lat_ts=60 +lon_0=-105 "
     "+x_0=0 +y_0=0 +R=6371200 +units=m +no_defs"
 )
 
-SHG_CELL_SIZE_M = 2000.0
+SHG_TYPE_TIME_REF: int = 420
+HRAP_TYPE_TIME_REF: int = 430
+
+SHG_CELL_SIZE_M: float = 2000
 HRAP_CELL_SIZE_M = 4762.5
 
-SHG_CRS = pyproj.CRS.from_proj4(SHG_PROJ4)
+SHG_LOWER_LEFT = (240, -1977)
+
+SHG_CRS = pyproj.CRS.from_string('PROJCS["USA_Contiguous_Albers_Equal_Area_Conic_USGS_version",GEOGCS["GCS_North_American_1983",DATUM["D_North_American_1983",SPHEROID["GRS_1980",6378137.0,298.257222101]],PRIMEM["Greenwich",0.0],UNIT["Degree",0.0174532925199433]],PROJECTION["Albers"],PARAMETER["False_Easting",0.0],PARAMETER["False_Northing",0.0],PARAMETER["Central_Meridian",-96.0],PARAMETER["Standard_Parallel_1",29.5],PARAMETER["Standard_Parallel_2",45.5],PARAMETER["Latitude_Of_Origin",23.0],UNIT["Meter",1.0]]')
+# SHG_CRS = 'PROJCS["USA_Contiguous_Albers_Equal_Area_Conic_USGS_version",GEOGCS["GCS_North_American_1983",DATUM["D_North_American_1983",SPHEROID["GRS_1980",6378137.0,298.257222101]],PRIMEM["Greenwich",0.0],UNIT["Degree",0.0174532925199433]],PROJECTION["Albers"],PARAMETER["False_Easting",0.0],PARAMETER["False_Northing",0.0],PARAMETER["Central_Meridian",-96.0],PARAMETER["Standard_Parallel_1",29.5],PARAMETER["Standard_Parallel_2",45.5],PARAMETER["Latitude_Of_Origin",23.0],UNIT["Meter",1.0]]'
+# SHG_CRS = pyproj.CRS.from_proj4(SHG_PROJ4)
+# SHG_CRS = pyproj.CRS.from_epsg(SHG_EPSG)
 HRAP_CRS = pyproj.CRS.from_proj4(HRAP_PROJ4)
 
-_GRID_REGISTRY: dict[GridSystem, tuple[pyproj.CRS, float]] = {
-    "shg": (SHG_CRS, SHG_CELL_SIZE_M),
-    "hrap": (HRAP_CRS, HRAP_CELL_SIZE_M),
+_GRID_REGISTRY: dict[GridSystem, tuple[pyproj.CRS, float, int]] = {
+    "shg": (SHG_CRS, SHG_CELL_SIZE_M, SHG_TYPE_TIME_REF),
+    "hrap": (HRAP_CRS, HRAP_CELL_SIZE_M, HRAP_TYPE_TIME_REF),
 }
 
 # Alternate 1D projected-dim names seen in various GRIB/GRIB2 decodes of
@@ -86,7 +100,7 @@ _ALT_X_DIMS = ("xgrid_0", "west_east", "west_east_stag")
 _ALT_Y_DIMS = ("ygrid_0", "south_north", "south_north_stag")
 
 
-def get_target_crs_and_cellsize(grid: GridSystem) -> tuple[pyproj.CRS, float]:
+def get_target_crs_and_cellsize(grid: GridSystem) -> tuple[pyproj.CRS, float, int]:
     """Look up the target CRS and native cell size for 'shg' or 'hrap'."""
     try:
         return _GRID_REGISTRY[grid]
@@ -236,7 +250,7 @@ def reproject_to_grid(
         The field resampled onto the target grid's CRS at its native cell
         size, with `.rio.crs` set accordingly.
     """
-    target_crs, cellsize = get_target_crs_and_cellsize(grid)
+    target_crs, cellsize, _ = get_target_crs_and_cellsize(grid)
 
     src_crs = _source_crs_from_herbie(da)
     da = _ensure_xy_dims(da, src_crs)
