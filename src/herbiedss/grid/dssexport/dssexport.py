@@ -20,7 +20,6 @@ from rich.console import Console
 
 from herbiedss.grid.dssexport.helpers import (
     DssDataType,
-    DssGridType,
     _build_dss_pathname,
     _extract_grid_and_metadata,
 )
@@ -82,13 +81,6 @@ def dssexport(
             help="A Dss data type.",
         ),
     ] = DssDataType.PER_CUM,
-    dss_grid_type: Annotated[
-        DssGridType,
-        typer.Option(
-            "--dss-grid-type",
-            help=f"A DSS data type (types: {DssGridType}).",
-        ),
-    ] = DssGridType.t420,
     apart: Annotated[
         str,
         typer.Option(
@@ -136,6 +128,9 @@ def dssexport(
             ),
         ),
     ] = "shg",
+    cellsize: Annotated[
+        int, typer.Option("--cellsize", help="Cell size for the DSS grid")
+    ] = 2000,
     boundary_file: Annotated[
         Path | None,
         typer.Option(

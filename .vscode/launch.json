@@ -2,7 +2,7 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Debug dssexport",
+            "name": "Debug herbidedss dss",
             "type": "debugpy",
             "request": "launch",
             "module": "herbiedss.main",
@@ -12,17 +12,17 @@
             "args": [
                 // "inventory",
                 // "download",
-                "dssexport",
+                "dss",
                 "--date",
                 "2026-08-24",
                 "-m",
                 "hrrr",
                 "-f",
-                "1",
+                "1-2",
                 "--subset",
                 ":APCP:surface:(?!0-[2-9]|0-1[0-9])\\d+-\\d+ hour acc fcst:",
-                // "--dssfile",
-                // "~/repositories/herbiedss/herbie_dss.dss"
+                "--dssfile",
+                "~/Downloads/herbie_grids.dss"
                 // "--apart",
                 // "SHG",
                 // "--bpart",
@@ -35,6 +35,15 @@
                 // "~/repositories/herbiedss/boundary/Watersheds.shp",
                 // "--remove-grib"
             ]
+        },
+        {
+            "name": "Debug Current PY",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}",
+            "justMyCode": false
         }
     ]
 }

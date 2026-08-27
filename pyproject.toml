@@ -17,6 +17,7 @@
     authors = [{ name = "Jeff Gregory", email = "jeffrey.s.gregory@usace.army.mil" }]
     requires-python = ">=3.13"
     dependencies = [
+        "gdal",
         "geopandas>=1.1.4",
         "hecdss>=0.1.32",
         "herbie-data>=2026.3.0",
@@ -40,3 +41,6 @@ dev = [
     "cartopy>=0.25.0",
     "metpy>=1.7.1",
 ]
+
+[tool.uv.sources]
+gdal = { path = "vendor/gdal-3.13.3-cp313-cp313-win_amd64.whl" }
