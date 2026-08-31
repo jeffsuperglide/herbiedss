@@ -19,7 +19,6 @@ from rich.console import Console
 
 from .grid.download import download as download_command
 from .grid.dss.dss import dss as dss_command
-from .grid.dssexport.dssexport import dssexport as dssexport_command
 from .grid.inventory import inventory as inventory_command
 
 app = typer.Typer(
@@ -30,7 +29,6 @@ app = typer.Typer(
 
 app.command(name="download")(download_command)
 app.command(name="inventory")(inventory_command)
-app.command(name="dssexport")(dssexport_command)
 app.command(name="dss")(dss_command)
 
 
