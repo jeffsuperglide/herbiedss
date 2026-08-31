@@ -11,3 +11,6 @@ wheels/
 
 # ignore any DSS file(s) generated in testing
 *.dss
+
+# gdal typings
+**/typings
