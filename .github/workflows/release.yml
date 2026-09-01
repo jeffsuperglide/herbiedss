@@ -31,6 +31,16 @@ jobs:
       - name: Build
         run: uv build --no-sources
 
+      - name: Capture artifact names
+        id: files
+        shell: bash
+        run: |
+          SDIST_FILE="$(basename dist/*.tar.gz)"
+          WHEEL_FILE="$(basename dist/*.whl)"
+
+          echo "sdist_file=$SDIST_FILE" >> "$GITHUB_OUTPUT"
+          echo "wheel_file=$WHEEL_FILE" >> "$GITHUB_OUTPUT"
+
       # Optional, but recommended: smoke-test the built artifacts.
       # Requires a tests/smoke_test.py that imports your package.
       # - name: Smoke test (wheel)
@@ -44,7 +54,7 @@ jobs:
           name: dist
           path: dist/
 
-  publish:
+  publish-pypi:
     needs:
       - build
     if: startsWith(github.ref, 'refs/tags/v')
@@ -73,3 +83,43 @@ jobs:
 
       - name: Publish to PyPI
         run: uv publish
+
+  publish-github:
+    needs:
+      - build
+    # if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # required to create the GitHub release
+    steps:
+      - name: actions/download-artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist/
+
+      - name: Set release variables
+        id: vars
+        shell: bash
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          VERSIONING="${TAG#v}"
+
+          echo "TAG=$TAG" >> "$GITHUB_ENV"
+          echo "VERSIONING=$VERSIONING" >> "$GITHUB_ENV"
+
+      - name: Create or update GitHub release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ env.TAG }}
+          target_commitish: ${{ github.sha }}
+          name: ${{ env.TAG }}
+          # body_path: release-notes.md
+          generate_release_notes: true
+          files: |
+            dist/${{ needs.build.outputs.sdist_file }}
+            dist/${{ needs.build.outputs.wheel_file }}
+          overwrite_files: true
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
