@@ -59,40 +59,40 @@ jobs:
       sdist_file: ${{ steps.files.outputs.sdist_file }}
       wheel_file: ${{ steps.files.outputs.wheel_file }}
 
-  # publish-pypi:
-  #   needs:
-  #     - build
-  #   if: startsWith(github.ref, 'refs/tags/v')
-  #   runs-on: ubuntu-latest
-  #   environment:
-  #     name: pypi
-  #     url: https://pypi.org/p/herbiedss
-  #   permissions:
-  #     id-token: write # required for Trusted Publishing (OIDC) — no secrets needed
-  #     contents: read # for actions/checkout, if you're in a private repo
-  #   steps:
-  #     - name: astral-sh/setup-uv
-  #       uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
-  #       with:
-  #         enable-cache: false
-  #         ignore-empty-workdir: true
+  publish-pypi:
+    needs:
+      - build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/herbiedss
+    permissions:
+      id-token: write # required for Trusted Publishing (OIDC) — no secrets needed
+      contents: read # for actions/checkout, if you're in a private repo
+    steps:
+      - name: astral-sh/setup-uv
+        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+        with:
+          enable-cache: false
+          ignore-empty-workdir: true
 
-  #     - name: actions/download-artifact
-  #       uses: actions/download-artifact@v8.0.1
-  #       with:
-  #         name: dist
-  #         path: dist/
+      - name: actions/download-artifact
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: dist
+          path: dist/
 
-  #     - name: astral-sh/attest-action
-  #       uses: astral-sh/attest-action@v0.0.6
+      - name: astral-sh/attest-action
+        uses: astral-sh/attest-action@v0.0.6
 
-  #     - name: Publish to PyPI
-  #       run: uv publish
+      - name: Publish to PyPI
+        run: uv publish
 
   publish-github:
     needs:
       - build
-    # if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
       contents: write # required to create the GitHub release
