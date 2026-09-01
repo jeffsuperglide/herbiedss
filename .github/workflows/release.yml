@@ -55,6 +55,10 @@ jobs:
           name: dist
           path: dist/
 
+    outputs:
+      sdist_file: ${{ steps.files.outputs.sdist_file }}
+      wheel_file: ${{ steps.files.outputs.wheel_file }}
+
   # publish-pypi:
   #   needs:
   #     - build
