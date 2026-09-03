@@ -1,11 +1,42 @@
 import os
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 import numpy as np
+import typer
 
 from herbiedss.grid.dss.dssprops import DSS_UNDEFINED_VALUE
+
+
+class BBox(NamedTuple):
+    minx: int
+    miny: int
+    maxx: int
+    maxy: int
+
+
+PathOrBBox = Path | tuple[int, int, int, int]
+
+
+def _parse_path_or_bbox(value: str | None) -> PathOrBBox | None:
+    """
+    Accepts either:
+      - a file path; returns Path
+      - four integers (comma or space separated) returns; tuple[int, int, int, int]
+      - fall through to None
+    """
+    if value:
+        # Try to parse as four integers first
+        cleaned = value.replace(",", " ").split()
+        if len(cleaned) == 4:
+            try:
+                return tuple(int(x) for x in cleaned)  # type: ignore
+            except ValueError:
+                pass  # fall through to Path
+
+        # Otherwise treat as a path
+        return Path(value)
 
 
 def _pd_to_datetime(value: Any) -> datetime:
@@ -305,20 +336,35 @@ def _extract_grid_metadata(
 
 
 def _gdal_warp_options(
-    boundary: Path | None, output_bounds: tuple[int, int, int, int] | None
+    boundary: Path | tuple[int, int, int, int] | None,
+    epsg: int | None,
 ) -> dict:
-    if boundary:
-        if not os.path.exists(boundary):
+    if boundary is None:
+        return {}
+
+    if isinstance(boundary, Path):
+        if not boundary.exists():
             raise FileNotFoundError(f"Boundary file not found: {boundary}")
         return {
             "cutlineDSName": boundary.as_posix(),
             "cropToCutline": True,
             "warpOptions": ["CUTLINE_ALL_TOUCHED=TRUE"],
         }
-    elif output_bounds:
-        return {"outputBounds": output_bounds}
-
-    return {}
+    if isinstance(boundary, tuple):
+        if len(boundary) != 4:
+            raise ValueError("Bounding box must be a 4-tuple (minx, miny, maxx, maxy)")
+        if epsg is None:
+            raise typer.BadParameter(
+                "When --boundary is a bounding box you must also supply --bbox-epsg",
+                param_hint="--bbox-epsg",
+            )
+        return {
+            "outputBounds": boundary,
+            "outputBoundsSRS": f"EPSG:{epsg}",
+            "creationOptions": ["COMPRESS=DEFLATE", "TILED=YES"],
+        }
+    # Should never reach here if the type hints are respected
+    raise TypeError(f"Unsupported boundary type: {type(boundary)}")
 
 
 def _dss_undefined_cells(data: np.ndarray, nodata) -> np.ndarray:

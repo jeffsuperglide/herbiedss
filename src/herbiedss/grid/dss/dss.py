@@ -69,9 +69,11 @@ from herbie.core import Herbie
 from rich.console import Console
 
 from herbiedss.grid.dss.dss_helpers import (
+    PathOrBBox,
     _build_dss_pathname,
     _dss_undefined_cells,
     _gdal_warp_options,
+    _parse_path_or_bbox,
 )
 from herbiedss.grid.dss.dssprops import (
     DSS_UNDEFINED_VALUE,
@@ -187,8 +189,8 @@ def dss(
         GridCellsize,
         typer.Option("--cellsize", help="Cell size for the DSS grid"),
     ] = 2000,
-    boundary_file: Annotated[
-        Path | None,
+    boundary: Annotated[
+        PathOrBBox | None,
         typer.Option(
             "--boundary-file",
             help=(
@@ -198,13 +200,14 @@ def dss(
                 "reprojection. The file's CRS can be anything (e.g. WGS84) -- "
                 "it is reprojected to match the target grid automatically."
             ),
+            parser=_parse_path_or_bbox,
         ),
     ] = None,
-    output_bounds: Annotated[
-        tuple[int, int, int, int] | None,
+    bbox_epsg: Annotated[
+        int | None,
         typer.Option(
-            "--output-bounds",
-            help="Tuple of integers defining a bounding box (e.g. (minX, minY, maxX, maxY)).",
+            "--bbox-epsg",
+            help="EPSG code of the bbox (only used when --boundary is a bbox).",
         ),
     ] = None,
 ) -> None:
@@ -294,15 +297,15 @@ def dss(
         `"hrap"` (polar stereographic, 4762.5 m native cell size). If
         `None`, the grid is written in its native model projection.
         Defaults to `"shg"`.
-    boundary_file : Path or None, optional
+    boundary : Path or None, optional
         Path to a watershed boundary vector file (shapefile, GeoJSON,
         GeoPackage, etc.) used to clip the reprojected grid. Requires
         `grid_system` to also be set, since clipping is applied after
         reprojection; the boundary file's own CRS may differ from the
         target grid's, as it is reprojected automatically to match.
         Defaults to `None`.
-    output_bounds: tuple or None, optional
-        tuple of integers (minX, minY, maxX, maxY)
+    bbox_epsg: integer or None, optional
+        EPSG code of the bbox (only used when --boundary is a bbox).
 
     Returns
     -------
@@ -316,15 +319,10 @@ def dss(
     Raises
     ------
     typer.Exit
-        Raised with exit code 1 if `boundary_file` is supplied without
+        Raised with exit code 1 if `boundary` is supplied without
         `grid_system` also being set, since clipping cannot be performed
         without a target grid to reproject onto first.
     """
-    if boundary_file is not None and grid_system is None:
-        error_console.print(
-            "--boundary-file requires --grid-system (shg|hrap) to also be set."
-        )
-        raise typer.Exit(code=1)
 
     # try to import gdal
     try:
@@ -378,8 +376,8 @@ def dss(
                 # check DSS parts and create the path
                 _apart = grid_system.upper() if len(apart) <= 0 else apart.title()
                 _bpart = (
-                    boundary_file.name.replace(boundary_file.suffix, "").title()
-                    if boundary_file is not None
+                    boundary.name.replace(boundary.suffix, "").title()
+                    if isinstance(boundary, Path)
                     else bpart
                 )
                 _fpart = (
@@ -392,10 +390,10 @@ def dss(
                 src = H.download(search=subset)
 
                 # Destination dataset spatial reference system.
-                dst_osr_srs = osr.SpatialReference()
-                dst_srs = "EPSG:5070"
-                epsg_code = dst_srs.split(":")[-1]
-                dst_osr_srs.ImportFromEPSG(int(epsg_code))
+                # dst_osr_srs = osr.SpatialReference()
+                # dst_srs = "EPSG:5070"
+                # epsg_code = dst_srs.split(":")[-1]
+                # dst_osr_srs.ImportFromEPSG(int(epsg_code))
 
                 with HecDss(dssfile) as dss:
                     #  DSS options
@@ -437,12 +435,12 @@ def dss(
                     }
 
                     # warp options
-                    warp_kwargs = _gdal_warp_options(boundary_file, output_bounds)
+                    warp_kwargs = _gdal_warp_options(boundary, bbox_epsg)
                     warp_kwargs = {
                         "format": "MEM",
                         "xRes": cellsize,
                         "yRes": cellsize,
-                        "dstSRS": dst_osr_srs.ExportToWkt(),
+                        "dstSRS": srs_def,
                         "targetAlignedPixels": True,
                         "resampleAlg": gdalconst.GRA_Bilinear,
                         "copyMetadata": False,

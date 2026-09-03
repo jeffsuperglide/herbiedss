@@ -58,6 +58,7 @@ from rasterio.enums import Resampling
 
 GridSystem = Literal["shg", "hrap"]
 
+
 # SHG_PROJ4 = (
 #     "+proj=aea +lat_1=29.5 +lat_2=45.5 +lat_0=23 +lon_0=-96 "
 #     "+x_0=0 +y_0=0 +datum=NAD83 +units=m +no_defs"
@@ -66,7 +67,7 @@ SHG_PROJ4 = (
     "+proj=aea +lat_0=23 +lon_0=-96 +lat_1=29.5 +lat_2=45.5 "
     "+x_0=0 +y_0=0 +datum=NAD83 +units=m +no_defs +type=crs"
 )
-SHG_EPSG = "EPSG:5070"
+SHG_EPSG = 5070
 
 HRAP_PROJ4 = (
     "+proj=stere +lat_0=90 +lat_ts=60 +lon_0=-105 "
