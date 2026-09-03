@@ -444,6 +444,7 @@ def dss(
                         "targetAlignedPixels": True,
                         "resampleAlg": gdalconst.GRA_Bilinear,
                         "copyMetadata": False,
+                        "creationOptions": ["COMPRESS=DEFLATE", "TILED=YES"],
                         **warp_kwargs,
                     }
 

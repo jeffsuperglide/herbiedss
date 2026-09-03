@@ -1,4 +1,3 @@
-import os
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, NamedTuple
@@ -361,7 +360,6 @@ def _gdal_warp_options(
         return {
             "outputBounds": boundary,
             "outputBoundsSRS": f"EPSG:{epsg}",
-            "creationOptions": ["COMPRESS=DEFLATE", "TILED=YES"],
         }
     # Should never reach here if the type hints are respected
     raise TypeError(f"Unsupported boundary type: {type(boundary)}")
