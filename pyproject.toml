@@ -25,7 +25,7 @@
     dependencies = [
         "gdal",
         "geopandas>=1.1.4",
-        "hecdss>=0.1.31",
+        "hecdss==0.1.33",
         "herbie-data>=2026.3.0",
         "pint>=0.25.3",
         "pyproj>=3.7.2",
@@ -33,7 +33,7 @@
         "rich>=15.0.0",
         "rioxarray>=0.23.0",
         "typer>=0.27.1",
-    ]
+]
 
 [project.scripts]
     herbiedss = "herbiedss.main:app"

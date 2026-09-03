@@ -491,15 +491,15 @@ wheels = [
 
 [[package]]
 name = "hecdss"
-version = "0.1.32"
+version = "0.1.33"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "numpy" },
     { name = "tzdata" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/be/93/5cc5004f762c3154ba74e1fd4038a6f6ecedc5fb28c3b10110aa4ccab2d7/hecdss-0.1.32.tar.gz", hash = "sha256:6439cd0fcb3dc4f2542735b52ceabfc9630cd36ecf62a80aa70ac1993aed49af", size = 1158081, upload-time = "2026-07-31T16:16:48.757Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/6f/9e/73ac0d0953caa89ebb13b064234710d67cd84d54f65675dcd9d61ff92b18/hecdss-0.1.33.tar.gz", hash = "sha256:304c266cb9dcc46129d74685b44e0cfc2fd72b995710d49ca47a050b09b465bb", size = 1159001, upload-time = "2026-08-28T20:55:00.34Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/82/b6/af0e60c0b98ade33494bce5ed5b0207507db40cc3d00caaab611baaa5b0a/hecdss-0.1.32-py3-none-any.whl", hash = "sha256:4de9250f12aacdf89be80ce9fd650875a71269d041ebaa2c2c0f7b4cd48dd4a6", size = 1153520, upload-time = "2026-07-31T16:16:47.121Z" },
+    { url = "https://files.pythonhosted.org/packages/59/a5/c7e9b703332824b5b0f5f3f90287a4aa75f1b838b423eeeb4103ddf2e473/hecdss-0.1.33-py3-none-any.whl", hash = "sha256:acbf8b5c94e84db6db57a29bf0a4dee449a5819a03ad4b801bee6534b2ae86b5", size = 1153815, upload-time = "2026-08-28T20:54:58.776Z" },
 ]
 
 [[package]]
@@ -523,7 +523,6 @@ wheels = [
 
 [[package]]
 name = "herbiedss"
-version = "0.2.0"
 source = { editable = "." }
 dependencies = [
     { name = "geopandas" },
@@ -546,7 +545,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "geopandas", specifier = ">=1.1.4" },
-    { name = "hecdss", specifier = ">=0.1.31" },
+    { name = "hecdss", specifier = "==0.1.33" },
     { name = "herbie-data", specifier = ">=2026.3.0" },
     { name = "pint", specifier = ">=0.25.3" },
     { name = "pyproj", specifier = ">=3.7.2" },
