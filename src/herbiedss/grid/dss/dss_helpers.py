@@ -9,33 +9,50 @@ from herbiedss.grid.dss.dssprops import DSS_UNDEFINED_VALUE
 
 
 class BBox(NamedTuple):
-    minx: int
-    miny: int
-    maxx: int
-    maxy: int
+    xmin: int
+    ymin: int
+    xmax: int
+    ymax: int
 
 
-PathOrBBox = Path | tuple[int, int, int, int]
-
-
-def _parse_path_or_bbox(value: str | None) -> PathOrBBox | None:
+def _parse_path_or_bbox(value: str | None) -> Path | BBox | None:
     """
     Accepts either:
       - a file path; returns Path
       - four integers (comma or space separated) returns; tuple[int, int, int, int]
       - fall through to None
     """
-    if value:
-        # Try to parse as four integers first
-        cleaned = value.replace(",", " ").split()
-        if len(cleaned) == 4:
-            try:
-                return tuple(int(x) for x in cleaned)  # type: ignore
-            except ValueError:
-                pass  # fall through to Path
+    if value is None:
+        return
 
-        # Otherwise treat as a path
-        return Path(value)
+    if value:
+        # treat input string as a path
+        path = Path(value)
+        if path.exists() or path.suffix.lower() in {".shp", ".geojson", ".json"}:
+            return path
+        
+        # Try to parse as four integers first
+        try:
+            parts = value.replace(",", " ").split()
+        except ValueError:
+            raise typer.BadParameter(
+                "must be a vector-file path or four separated integers (comma or space): "
+                "xmin,ymin,xmax,ymax or 'xmin ymin xmax ymax'"
+            )
+        
+        if len(parts) != 4:
+            raise typer.BadParameter(
+                "must be a vector-file path or four separated integers (comma or space): "
+                "xmin,ymin,xmax,ymax or 'xmin ymin xmax ymax'"
+            )
+
+
+        bbox = BBox(*(int(x) for x in parts))
+        if bbox.xmin >= bbox.xmax or bbox.ymin >= bbox.ymin:
+            raise typer.BadParameter(
+                "Bounding box must satisfy xmin < xmax and ymin < ymax"
+            )
+        return bbox
 
 
 def _pd_to_datetime(value: Any) -> datetime:
@@ -335,7 +352,7 @@ def _extract_grid_metadata(
 
 
 def _gdal_warp_options(
-    boundary: Path | tuple[int, int, int, int] | None,
+    boundary: Path | BBox | None,
     epsg: int | None,
 ) -> dict:
     if boundary is None:
@@ -344,11 +361,14 @@ def _gdal_warp_options(
     if isinstance(boundary, Path):
         if not boundary.exists():
             raise FileNotFoundError(f"Boundary file not found: {boundary}")
-        return {
+        kwargs = {
             "cutlineDSName": boundary.as_posix(),
             "cropToCutline": True,
             "warpOptions": ["CUTLINE_ALL_TOUCHED=TRUE"],
         }
+        if epsg:
+            kwargs = {"cutlineSRS": f"EPSG:{epsg}", **kwargs}
+        return kwargs
     if isinstance(boundary, tuple):
         if len(boundary) != 4:
             raise ValueError("Bounding box must be a 4-tuple (minx, miny, maxx, maxy)")

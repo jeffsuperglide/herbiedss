@@ -40,7 +40,7 @@ and save them to a specific DSS file:
         --product sfc \
         --fxx 1,2,3 \
         --subset "APCP" \
-        --boundary-file watershed.geojson \
+        --boundary watershed.geojson \
         --dssfile output.dss \
         --bpart "MY_WATERSHED"
 
@@ -54,7 +54,7 @@ Notes
   gridded-data record.
 - A failure while writing one date/forecast-hour combination is reported to
   stderr and does not stop processing of later combinations.
-- `--boundary-file` requires a target `--grid-system`, because clipping occurs
+- `--boundary` requires a target `--grid-system`, because clipping occurs
   after GDAL reprojection.
 """
 
@@ -69,7 +69,6 @@ from herbie.core import Herbie
 from rich.console import Console
 
 from herbiedss.grid.dss.dss_helpers import (
-    PathOrBBox,
     _build_dss_pathname,
     _dss_undefined_cells,
     _gdal_warp_options,
@@ -117,13 +116,6 @@ def dss(
     subset: SubsetOption = None,
     verbose: VerboseOption = False,
     overwrite: OverwriteOption = False,
-    remove_grib: Annotated[
-        bool,
-        typer.Option(
-            "--remove-grib",
-            help="Delete the local GRIB2 file after loading it into xarray.",
-        ),
-    ] = False,
     dssfile: Annotated[
         str,
         typer.Option(
@@ -190,9 +182,9 @@ def dss(
         typer.Option("--cellsize", help="Cell size for the DSS grid"),
     ] = 2000,
     boundary: Annotated[
-        PathOrBBox | None,
+        str | None,
         typer.Option(
-            "--boundary-file",
+            "--boundary",
             help=(
                 "Path to a watershed boundary vector file (shapefile, GeoJSON, "
                 "GeoPackage, etc.) to clip the reprojected grid to. Requires "
@@ -203,7 +195,7 @@ def dss(
             parser=_parse_path_or_bbox,
         ),
     ] = None,
-    bbox_epsg: Annotated[
+    boundary_epsg: Annotated[
         int | None,
         typer.Option(
             "--bbox-epsg",
@@ -266,11 +258,6 @@ def dss(
     overwrite : OverwriteOption, optional
         If `True`, re-download and overwrite the local GRIB2 file even if
         it already exists. Defaults to `False`.
-    remove_grib : bool, optional
-        If `True`, delete the local GRIB2 file after it has been loaded
-        into xarray (only if Herbie itself downloaded it during this run).
-        Passed through to `Herbie.xarray(remove_grib=...)`. Defaults to
-        `False`.
     dssfile : str, optional
         Path to the output HEC-DSS file. If left at the default
         `"herbiedss.dss"` and `save_dir` is provided, the file is created
@@ -297,15 +284,16 @@ def dss(
         `"hrap"` (polar stereographic, 4762.5 m native cell size). If
         `None`, the grid is written in its native model projection.
         Defaults to `"shg"`.
-    boundary : Path or None, optional
+    boundary : str or None, optional
         Path to a watershed boundary vector file (shapefile, GeoJSON,
-        GeoPackage, etc.) used to clip the reprojected grid. Requires
-        `grid_system` to also be set, since clipping is applied after
-        reprojection; the boundary file's own CRS may differ from the
-        target grid's, as it is reprojected automatically to match.
-        Defaults to `None`.
-    bbox_epsg: integer or None, optional
-        EPSG code of the bbox (only used when --boundary is a bbox).
+        GeoPackage, etc.) used to clip the reprojected grid. GDAL will try
+        to read the spatial reference from the boundary (vector layer) when
+        it is available.  Explicitly define the boundary spatial reference
+        using the boundary_epsg option.  A boundary defined as a bounding box (bbox)
+        requires `"boundary_epsg"` definition.  Bounding box entry is a string formated
+        as xmin,ymin,xmax,ymax or "xmin ymin xmax ymax". Defaults to `None`.
+    boundary_epsg: integer or None, optional
+        EPSG code of the boundary.  Defaults to destination/output CRS if `None`.
 
     Returns
     -------
@@ -435,7 +423,7 @@ def dss(
                     }
 
                     # warp options
-                    warp_kwargs = _gdal_warp_options(boundary, bbox_epsg)
+                    warp_kwargs = _gdal_warp_options(boundary, boundary_epsg) # type: ignore
                     warp_kwargs = {
                         "format": "MEM",
                         "xRes": cellsize,
@@ -444,7 +432,7 @@ def dss(
                         "targetAlignedPixels": True,
                         "resampleAlg": gdalconst.GRA_Bilinear,
                         "copyMetadata": False,
-                        "creationOptions": ["COMPRESS=DEFLATE", "TILED=YES"],
+                        # "creationOptions": ["COMPRESS=DEFLATE", "TILED=YES"],
                         **warp_kwargs,
                     }
 
