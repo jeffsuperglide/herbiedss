@@ -23,10 +23,6 @@
     ]
     requires-python = ">=3.13"
     dependencies = [
-        # Windows: use the vendored CPython 3.13 / x86-64 wheel.
-        "GDAL @ https://raw.githubusercontent.com/jeffsuperglide/herbiedss/main/vendor/gdal-3.13.3-cp313-cp313-win_amd64.whl ; sys_platform == 'win32' and python_version == '3.13'",
-        # Linux: resolve the normal GDAL package from PyPI.
-        "GDAL==3.13.3 ; sys_platform == 'linux' and python_version == '3.13'",
         "geopandas>=1.1.4",
         "hecdss>=0.1.33",
         "herbie-data>=2026.3.0",
