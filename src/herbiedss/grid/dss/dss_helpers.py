@@ -9,10 +9,10 @@ from herbiedss.grid.dss.dssprops import DSS_UNDEFINED_VALUE
 
 
 class BBox(NamedTuple):
-    xmin: int
-    ymin: int
-    xmax: int
-    ymax: int
+    xmin: float
+    ymin: float
+    xmax: float
+    ymax: float
 
 
 def _parse_path_or_bbox(value: str | None) -> Path | BBox | None:
@@ -30,7 +30,7 @@ def _parse_path_or_bbox(value: str | None) -> Path | BBox | None:
         path = Path(value)
         if path.exists() or path.suffix.lower() in {".shp", ".geojson", ".json"}:
             return path
-        
+
         # Try to parse as four integers first
         try:
             parts = value.replace(",", " ").split()
@@ -39,16 +39,15 @@ def _parse_path_or_bbox(value: str | None) -> Path | BBox | None:
                 "must be a vector-file path or four separated integers (comma or space): "
                 "xmin,ymin,xmax,ymax or 'xmin ymin xmax ymax'"
             )
-        
+
         if len(parts) != 4:
             raise typer.BadParameter(
                 "must be a vector-file path or four separated integers (comma or space): "
                 "xmin,ymin,xmax,ymax or 'xmin ymin xmax ymax'"
             )
 
-
-        bbox = BBox(*(int(x) for x in parts))
-        if bbox.xmin >= bbox.xmax or bbox.ymin >= bbox.ymin:
+        bbox = BBox(*(float(x) for x in parts))
+        if bbox.xmin >= bbox.xmax or bbox.ymin >= bbox.ymax:
             raise typer.BadParameter(
                 "Bounding box must satisfy xmin < xmax and ymin < ymax"
             )
@@ -371,7 +370,7 @@ def _gdal_warp_options(
         return kwargs
     if isinstance(boundary, tuple):
         if len(boundary) != 4:
-            raise ValueError("Bounding box must be a 4-tuple (minx, miny, maxx, maxy)")
+            raise ValueError("Bounding box must be a 4-tuple (xmin, ymin, xmax, ymax)")
         if epsg is None:
             raise typer.BadParameter(
                 "When --boundary is a bounding box you must also supply --bbox-epsg",
@@ -391,3 +390,23 @@ def _dss_undefined_cells(data: np.ndarray, nodata) -> np.ndarray:
     data[np.isnan(data)] = DSS_UNDEFINED_VALUE
 
     return data
+
+
+def _to_dss_undefined(
+    data: np.ndarray,
+    *nodata_values: float | None,
+) -> np.ndarray:
+    result = np.asarray(data, dtype=np.float32).copy()
+
+    invalid = ~np.isfinite(result)
+
+    for value in nodata_values:
+        if value is None:
+            continue
+        if np.isnan(value):
+            invalid |= np.isnan(result)
+        else:
+            invalid |= np.isclose(result, value)
+
+    result[invalid] = DSS_UNDEFINED_VALUE
+    return result

@@ -8,7 +8,7 @@ from enum import Enum
 from functools import lru_cache
 from typing import Literal
 
-GridSystem = Literal["shg", "hrap"]
+GridSystem = Literal["shg", "hrap", "utm17n"]
 
 FLOAT_MAX = 3.40282347e38
 FLOAT_UNDEFINED = -FLOAT_MAX
@@ -114,7 +114,7 @@ class DssGridType(Enum):
     UNDEFINED_GRID_TYPE = 400
     HRAP = 410
     SHG = ALBERS = 420
-    UTM6N = SPECIFIED_GRID_TYPE = 430
+    UTM6N = UTM17N = SPECIFIED_GRID_TYPE = 430
 
     @classmethod
     @lru_cache(maxsize=1)
@@ -124,7 +124,8 @@ class DssGridType(Enum):
             "HRAP": cls.HRAP,
             "SHG": cls.SHG,
             "ALBERS": cls.ALBERS,
-            "UTM6N": cls.UTM6N,
+            "UTM6N": cls.SPECIFIED_GRID_TYPE,
+            "UTM17N": cls.SPECIFIED_GRID_TYPE,
             "SPECIFIED_GRID_TYPE": cls.SPECIFIED_GRID_TYPE,
         }
 
@@ -146,6 +147,7 @@ class SpatialReferenceDefinition(Enum):
     HRAP = HRAP_SRC_DEFINITION
     SHG = ALBERS = SHG_SRC_DEFINITION
     UTM6N = UTM_SRC_DEFINITION % ("6", "N", "-147", "0")
+    UTM17N = UTM_SRC_DEFINITION % ("17", "N", "-81", "0")
 
     @classmethod
     @lru_cache(maxsize=1)
@@ -157,6 +159,7 @@ class SpatialReferenceDefinition(Enum):
             "SHG": cls.SHG,
             "ALBERS": cls.ALBERS,
             "UTM6N": cls.UTM6N,
+            "UTM17N": cls.UTM17N,
         }
 
     @classmethod

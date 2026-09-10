@@ -2,7 +2,7 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Debug herbidedss dss",
+            "name": "Debug herbidedss dss hrrr",
             "type": "debugpy",
             "request": "launch",
             "module": "herbiedss.main",
@@ -25,8 +25,8 @@
                 ":APCP:surface:(?!0-[2-9]|0-1[0-9])\\d+-\\d+ hour acc fcst:",
                 // ":TMP:",
                 // ":APCP:",
-                "--dssfile",
-                "~/Downloads/herbie_grids.dss",
+                // "--dssfile",
+                // "~/Downloads/herbie_grids.dss",
                 // "--apart",
                 // "SHG",
                 // "--bpart",
@@ -37,6 +37,48 @@
                 // "MODEL-PRODUCT-FXX"
                 // "--boundary",
                 // "~/repositories/herbiedss/boundary/Watersheds.shp",
+            ]
+        },
+        {
+            "name": "Debug herbidedss dss utm17n",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "herbiedss.main",
+            // "program": "${workspaceFolder}/src/herbiedss/main.py",
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}",
+            "args": [
+                "dss",
+                "--date",
+                "2026-08-20",
+                "--model",
+                "gfs",
+                "--product",
+                "pgrb2.0p25",
+                "--fxx",
+                "1",
+                "--subset",
+                ":APCP:",
+                // "--grid-system",
+                // "utm17n",
+                // ":TMP:",
+                // ":APCP:",
+                // "--dssfile",
+                // "~/Downloads/herbie_grids.dss"
+                // "--apart",
+                // "SHG",
+                // "--bpart",
+                // "My Watershed",
+                // "--cpart",
+                // "PRECIP",
+                // "--fpart",
+                // "MODEL-PRODUCT-FXX"
+                "--boundary",
+                // "-81.6251,6.8749,-77.8749,10.6251",
+                "-125.0011 24.9493 -66.9326 49.5904",
+                "--bbox-epsg",
+                "4326",
+                // "--remove-grib"
             ]
         },
         {

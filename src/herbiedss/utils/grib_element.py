@@ -32,7 +32,7 @@ class GribElementInfo:
         value = self.parameter_name.upper()
 
         if re.search(r"\bPRECIPITATION\b", value):
-            return "Precipitation"
+            return "Precip"
 
         if re.search(r"\bPRECIP\b", value):
             return "Precip"
@@ -85,12 +85,12 @@ class GribElementResolver:
         "RH": "Relative humidity",
         "MIXR": "Humidity mixing ratio",
         "PWAT": "Precipitable water",
-        "PRATE": "Precipitation rate",
-        "APCP": "Total precipitation",
-        "ACPCP": "Convective precipitation",
-        "NCPCP": "Non-convective precipitation",
-        "CPRAT": "Convective precipitation rate",
-        "CPOFP": "Probability of frozen precipitation",
+        "PRATE": "Precip rate",
+        "APCP": "Precip-Total ",
+        "ACPCP": "Precip-Convective",
+        "NCPCP": "Precip-Non-convective",
+        "CPRAT": "Precip-Convective rate",
+        "CPOFP": "Precip-Probability of frozen",
         # Clouds and hydrometeors
         "TCDC": "Total cloud cover",
         "LCDC": "Low cloud cover",
@@ -148,7 +148,7 @@ class GribElementResolver:
         "CSNOW": "Categorical snow",
         "CICEP": "Categorical ice pellets",
         "CFRZR": "Categorical freezing rain",
-        "PTYPE": "Precipitation type",
+        "PTYPE": "Precip type",
     }
 
     def __init__(self, element_names: Mapping[str, str] | None = None):

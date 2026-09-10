@@ -70,9 +70,9 @@ from rich.console import Console
 
 from herbiedss.grid.dss.dss_helpers import (
     _build_dss_pathname,
-    _dss_undefined_cells,
     _gdal_warp_options,
     _parse_path_or_bbox,
+    _to_dss_undefined,
 )
 from herbiedss.grid.dss.dssprops import (
     DSS_UNDEFINED_VALUE,
@@ -95,6 +95,7 @@ from herbiedss.options import (
     VerboseOption,
 )
 from herbiedss.utils.grib_element import GribElementResolver
+from herbiedss.utils.source_info import _source_grid_info
 from herbiedss.utils.units import Units
 from herbiedss.utils.validate import parse_date_values, parse_option_values
 
@@ -151,13 +152,13 @@ def dss(
             help="F-part: version / descriptive label.",
         ),
     ] = "",
-    variable: Annotated[
-        str | None,
-        typer.Option(
-            "--variable",
-            help="Explicit xarray variable name if --subset matches more than one.",
-        ),
-    ] = None,
+    # variable: Annotated[
+    #     str | None,
+    #     typer.Option(
+    #         "--variable",
+    #         help="Explicit xarray variable name if --subset matches more than one.",
+    #     ),
+    # ] = None,
     grid_system: Annotated[
         GridSystem,
         typer.Option(
@@ -195,7 +196,7 @@ def dss(
             parser=_parse_path_or_bbox,
         ),
     ] = None,
-    boundary_epsg: Annotated[
+    bbox_epsg: Annotated[
         int | None,
         typer.Option(
             "--bbox-epsg",
@@ -274,10 +275,6 @@ def dss(
     fpart : str, optional
         F-part of the DSS pathname: version or descriptive label.
         Defaults to `""`.
-    variable : str or None, optional
-        Explicit xarray variable name to extract when `subset` matches
-        more than one variable in the returned Dataset. If `None`, the
-        first variable is used. Defaults to `None`.
     grid_system : GridSystem or None, optional
         Hydrologic grid to reproject the model field onto before writing
         to DSS: `"shg"` (Albers equal-area, 2000 m native cell size) or
@@ -289,10 +286,10 @@ def dss(
         GeoPackage, etc.) used to clip the reprojected grid. GDAL will try
         to read the spatial reference from the boundary (vector layer) when
         it is available.  Explicitly define the boundary spatial reference
-        using the boundary_epsg option.  A boundary defined as a bounding box (bbox)
-        requires `"boundary_epsg"` definition.  Bounding box entry is a string formated
+        using the bbox_epsg option.  A boundary defined as a bounding box (bbox)
+        requires `"bbox_epsg"` definition.  Bounding box entry is a string formated
         as xmin,ymin,xmax,ymax or "xmin ymin xmax ymax". Defaults to `None`.
-    boundary_epsg: integer or None, optional
+    bbox_epsg: integer or None, optional
         EPSG code of the boundary.  Defaults to destination/output CRS if `None`.
 
     Returns
@@ -312,11 +309,19 @@ def dss(
         without a target grid to reproject onto first.
     """
 
+    # variable : str or None, optional
+    #     Explicit xarray variable name to extract when `subset` matches
+    #     more than one variable in the returned Dataset. If `None`, the
+    #     first variable is used. Defaults to `None`.
+
     # try to import gdal
     try:
         from osgeo import gdal, gdalconst, osr
 
         osr.UseExceptions()
+        gdal.SetConfigOption("GRIB_ADJUST_LONGITUDE_RANGE", "YES")
+
+        console.print(f"GDAL version: {gdal.VersionInfo('--version')}")
 
     except ImportError as exc:
         raise ImportError(
@@ -375,41 +380,245 @@ def dss(
                 if dss_data_type is None:
                     dss_data_type = DssDataType.PER_CUM
 
+                #  DSS options
+                dss_grid_type = DssGridType.from_grid_system(grid_system.upper())
+
+                # Getting the WKT for internal grid systems
+                dst_srs_default = SpatialReferenceDefinition.from_grid_system("SHG")
+                dst_srs_from_grid = SpatialReferenceDefinition.from_grid_system(
+                    grid_system.upper()
+                )
+
+                dst_srs_wkt = (
+                    dst_srs_default.value
+                    if len(dst_srs_from_grid.value) == 0
+                    else dst_srs_from_grid.value
+                )
+
+                # data source spatial reference
+                dst_srs = osr.SpatialReference()
+                dst_srs.ImportFromWkt(dst_srs_wkt)
+                # dst_srs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
+
+                time_zone = TimeZone.UTC
+
+                # read datasets and write to DSS
                 src = H.download(search=subset)
 
-                # Destination dataset spatial reference system.
-                # dst_osr_srs = osr.SpatialReference()
-                # dst_srs = "EPSG:5070"
-                # epsg_code = dst_srs.split(":")[-1]
-                # dst_osr_srs.ImportFromEPSG(int(epsg_code))
+                with gdal.Open(src) as ds:
+                    band_num = 1
+                    band = ds.GetRasterBand(band_num)
+                    if band is None:
+                        raise RuntimeError(
+                            f"Could not open GRIB band {band_num}; skipping."
+                        )
+                    band_meta = band.GetMetadata()
+                    src_nodata = band.GetNoDataValue()
 
-                with HecDss(dssfile) as dss:
-                    #  DSS options
-                    dss_grid_type = DssGridType.from_grid_system(grid_system.upper())
-
-                    srs_def_default = SpatialReferenceDefinition.from_grid_system("SHG")
-                    srs_def_from_grid = SpatialReferenceDefinition.from_grid_system(
-                        grid_system.upper()
+                    # get the band, its metadata, dataset, and build a dss path
+                    band_vrt = gdal.Translate(
+                        "",
+                        ds,
+                        format="VRT",
+                        bandList=[band_num],
                     )
-                    srs_def = (
-                        srs_def_default.value
-                        if len(srs_def_from_grid.value) == 0
-                        else srs_def_from_grid.value
+                    source_info = _source_grid_info(band_vrt)
+
+                    console.print(
+                        "[cyan]Source grid:[/cyan] "
+                        f"{source_info.projection_name}; "
+                        f"extent=({source_info.xmin:.6f}, {source_info.ymin:.6f}, "
+                        f"{source_info.xmax:.6f}, {source_info.ymax:.6f}); "
+                        f"resolution=({source_info.xres:.8f}, {source_info.yres:.8f}); "
+                        f"geographic={source_info.is_geographic}; "
+                        f"global={source_info.is_global}; "
+                        f"lon_0_360={source_info.uses_360_longitudes}"
                     )
 
-                    time_zone = TimeZone.UTC
+                    if source_info.is_global and source_info.uses_360_longitudes:
+                        version_num = int(gdal.VersionInfo("VERSION_NUM"))
+
+                        if version_num < 3040000:
+                            raise RuntimeError(
+                                "This is a global GRIB grid with a 0..360 longitude axis. "
+                                "GDAL < 3.4 does not transparently rewrap it. Upgrade to GDAL "
+                                "3.4+ or add a longitude-normalization preprocessing step."
+                            )
+
+                        raise RuntimeError(
+                            "GDAL still exposed a global 0..360 longitude grid despite "
+                            "GRIB_ADJUST_LONGITUDE_RANGE=YES. Inspect the source extent and "
+                            "apply explicit longitude normalization before the target warp."
+                        )
+
+                    if band_vrt is None:
+                        raise RuntimeError(
+                            f"Could not build VRT for GRIB band {band_num}."
+                        )
+
+                    src_srs = band_vrt.GetSpatialRef()
+                    if src_srs is None:
+                        raise RuntimeError(
+                            f"GRIB band {band_num} has no source spatial reference. "
+                            "Cannot safely reproject it."
+                        )
+
+                    clip_kwargs = _gdal_warp_options(boundary, bbox_epsg)  # type: ignore
+                    clip_warp_options = clip_kwargs.pop("warpOptions", [])
+
+                    single_band_warp_kwargs = {
+                        "format": "MEM",
+                        "xRes": float(cellsize),
+                        "yRes": float(cellsize),
+                        "dstSRS": dst_srs.ExportToWkt(),
+                        "targetAlignedPixels": True,
+                        "resampleAlg": gdalconst.GRA_Bilinear,
+                        "copyMetadata": False,
+                        "multithread": True,
+                        "warpOptions": [
+                            "INIT_DEST=NO_DATA",
+                            "UNIFIED_SRC_NODATA=YES",
+                            *clip_warp_options,
+                        ],
+                        **clip_kwargs,
+                    }
+
+                    WARP_NODATA = np.float32(-9999.0)
+                    if src_nodata is not None:
+                        single_band_warp_kwargs["srcNodata"] = src_nodata
+
+                    single_band_warp_kwargs["dstNodata"] = float(WARP_NODATA)
+
+                    # get the band spatial reference from the dataset.
+                    # src_wkt = band_vrt.GetProjection()
+                    # src_srs = osr.SpatialReference()
+                    # src_srs.ImportFromWkt(src_wkt)
+                    # src_srs.SetAxisMappingStrategy(
+                    #     osr.OAMS_TRADITIONAL_GIS_ORDER
+                    # )
+
+                    # warp
+                    warp_ds = gdal.Warp(
+                        "",  # empty string => no filename, return a Dataset
+                        band_vrt,
+                        # srcSRS=src_srs.ExportToWkt(),
+                        **single_band_warp_kwargs,
+                    )
+
+                    if warp_ds is None:
+                        raise RuntimeError(
+                            f"GDAL warp failed for GRIB band {band_num}."
+                        )
+
+                    if warp_ds.RasterCount != 1:
+                        raise RuntimeError(
+                            f"Expected one output raster band for source band {band_num}; "
+                            f"got {warp_ds.RasterCount}."
+                        )
+
+                    # getting some meta data
+                    # GRIB_REF_TIME is the HRRR cycle or model-run time.
+                    band_meta = band.GetMetadata()
+
+                    # build dss path.
+                    # cpart comes from user input or GRIB_COMMENT
+                    grib_element: str = band_meta.get("GRIB_ELEMENT", "").strip()
+                    element_resolver = GribElementResolver()
+                    element_info = element_resolver.resolve(grib_element)
+                    _cpart = (
+                        element_info.dss_base_name.title() if len(cpart) <= 0 else cpart
+                    )
+
+                    # build the dsspath
+                    dss_path = _build_dss_pathname(
+                        _apart,
+                        _bpart,
+                        _cpart,
+                        _fpart,
+                        band_meta,
+                        element_info.duration_value,
+                    )
+
+                    # convert the units
+                    grib_unit: str = band_meta.get("GRIB_UNIT", "").strip()
+                    grib_unit = grib_unit.strip().strip("[]").lower()
+                    units = Units().to_preferred(grib_unit)
+
+                    # read the data as an array from the warp.
+                    # have to flip the data for DSS
+                    # replace nodata value with NaN
+                    dst_nodata = warp_ds.GetRasterBand(band_num).GetNoDataValue()
+
+                    data = warp_ds.GetRasterBand(1).ReadAsArray()
+                    if data is None or data.ndim != 2:
+                        raise RuntimeError(
+                            f"Expected a 2-D result for GRIB band {band_num}; "
+                            f"got {None if data is None else data.shape}."
+                        )
+
+                    data = data.astype(np.float32, copy=False)
+                    # data = _dss_undefined_cells(data, dst_nodata)
+                    data = _to_dss_undefined(data, src_nodata, dst_nodata)
+                    data = np.flipud(data)
+
+                    if data.ndim != 2:
+                        raise RuntimeError(
+                            f"Expected a 2-D raster after warp; got array shape {data.shape}."
+                        )
+
+                    gt = warp_ds.GetGeoTransform()
+                    x0, xres, rx, y0, ry, yres = gt
+
+                    if not np.isclose(rx, 0.0) or not np.isclose(ry, 0.0):
+                        raise RuntimeError(
+                            "Warp output has rotation terms; HEC-DSS gridded records require "
+                            "an unrotated grid."
+                        )
+
+                    if not np.isclose(xres, float(cellsize)):
+                        raise RuntimeError(
+                            f"Output x resolution is {xres}, expected {float(cellsize)}."
+                        )
+
+                    if not np.isclose(yres, -float(cellsize)):
+                        raise RuntimeError(
+                            f"Output y resolution is {yres}, expected {-float(cellsize)}."
+                        )
+
+                    xsize = warp_ds.RasterXSize
+                    ysize = warp_ds.RasterYSize
+
+                    xmin = x0
+                    ymin = y0 + ysize * yres
+
+                    llx_float = xmin / float(cellsize)
+                    lly_float = ymin / float(cellsize)
+
+                    if not np.isclose(llx_float, round(llx_float), atol=1e-7):
+                        raise RuntimeError(
+                            f"Output X origin {xmin} is not aligned to a {cellsize}-m DSS grid."
+                        )
+
+                    if not np.isclose(lly_float, round(lly_float), atol=1e-7):
+                        raise RuntimeError(
+                            f"Output Y origin {ymin} is not aligned to a {cellsize}-m DSS grid."
+                        )
+
+                    llx = round(llx_float)
+                    lly = round(lly_float)
+
                     create_options = {
-                        # "path": dss_path,
+                        "path": dss_path,
                         "type": dss_grid_type.value,
                         "dataType": dss_data_type.code,
-                        # "lowerLeftCellX": llx,
-                        # "lowerLeftCellY": lly,
-                        # "numberOfCellsX": xsize,
-                        # "numberOfCellsY": ysize,
+                        "lowerLeftCellX": llx,
+                        "lowerLeftCellY": lly,
+                        "numberOfCellsX": xsize,
+                        "numberOfCellsY": ysize,
                         "srsName": dss_grid_type.name,
                         "srsDefinitionType": 1,
-                        "srsDefinition": srs_def,
-                        # "dataUnits": "mm",
+                        "srsDefinition": dst_srs_wkt,
+                        "dataUnits": units,
                         "dataSource": "INTERNAL",
                         "timeZoneID": time_zone.name,
                         "timeZoneRawOffset": time_zone.value,
@@ -419,128 +628,33 @@ def dss(
                         "xCoordOfGridCellZero": 0.0,
                         "yCoordOfGridCellZero": 0.0,
                         "nullValue": DSS_UNDEFINED_VALUE,
-                        # "data": data_flip,
+                        "data": data,
                     }
 
-                    # warp options
-                    warp_kwargs = _gdal_warp_options(boundary, boundary_epsg) # type: ignore
-                    warp_kwargs = {
-                        "format": "MEM",
-                        "xRes": cellsize,
-                        "yRes": cellsize,
-                        "dstSRS": srs_def,
-                        "targetAlignedPixels": True,
-                        "resampleAlg": gdalconst.GRA_Bilinear,
-                        "copyMetadata": False,
-                        # "creationOptions": ["COMPRESS=DEFLATE", "TILED=YES"],
-                        **warp_kwargs,
-                    }
+                    valid = data[data != DSS_UNDEFINED_VALUE]
 
-                    # read datasets and write to DSS
-                    with gdal.Open(src) as ds:
-                        for band_num in range(1, ds.RasterCount + 1):
-                            # get the band, its metadata, dataset, and build a dss path
-                            band = ds.GetRasterBand(band_num)
+                    console.print(
+                        f"band={band_num}; shape={data.shape}; "
+                        f"ll_cell=({llx}, {lly}); "
+                        f"cellsize={cellsize}; "
+                        f"valid_cells={valid.size}; "
+                        f"min={np.nanmin(valid) if valid.size else 'NA'}; "
+                        f"max={np.nanmax(valid) if valid.size else 'NA'}"
+                    )
+                    record = GriddedData.create(**create_options)
 
-                            # getting some meta data
-                            # GRIB_REF_TIME is the HRRR cycle or model-run time.
-                            band_meta = band.GetMetadata()
-
-                            # build dss path.
-                            # cpart comes from user input or GRIB_COMMENT
-                            grib_element: str = band_meta.get(
-                                "GRIB_ELEMENT", ""
-                            ).strip()
-                            element_resolver = GribElementResolver()
-                            element_info = element_resolver.resolve(grib_element)
-                            _cpart = (
-                                element_info.dss_base_name.title()
-                                if len(cpart) <= 0
-                                else cpart
+                    try:
+                        status = dss.put(record)
+                        if status != 0:
+                            error_console.print(
+                                f"DSS put() failed.  Status is {status}."
                             )
-
-                            # build the dsspath
-                            dss_path = _build_dss_pathname(
-                                _apart,
-                                _bpart,
-                                _cpart,
-                                _fpart,
-                                band_meta,
-                                element_info.duration_value,
+                        else:
+                            console.print(
+                                f"[green]{date} F{hr:03d} written to DSS:[/green] {dss_path}"
                             )
-
-                            # convert the units
-                            grib_unit: str = band_meta.get("GRIB_UNIT", "").strip()
-                            grib_unit = grib_unit.strip().strip("[]").lower()
-                            units = Units().to_preferred(grib_unit)
-                            band_ds = band.GetDataset()
-
-                            # warp
-                            warp_ds = gdal.Warp(
-                                "",  # empty string => no filename, return a Dataset
-                                band_ds,
-                                **warp_kwargs,
-                            )
-
-                            xsize = warp_ds.RasterXSize
-                            ysize = warp_ds.RasterYSize
-
-                            adfGeoTransform = warp_ds.GetGeoTransform()
-
-                            llx = int(adfGeoTransform[0] / adfGeoTransform[1])
-                            lly = int(
-                                (adfGeoTransform[5] * ysize + adfGeoTransform[3])
-                                / adfGeoTransform[1]
-                            )
-
-                            # read the data as an array from the warp.
-                            # have to flip the data for DSS
-                            # replace nodata value with NaN
-                            data = warp_ds.ReadAsArray().astype(np.float32, copy=False)
-                            data_flip = np.flipud(data)
-                            nodata = band.GetNoDataValue()
-                            data = _dss_undefined_cells(data_flip, nodata)
-
-                            create_options = {
-                                "path": dss_path,
-                                # "type": dss_grid_type.value,
-                                # "dataType": dss_data_type.code,
-                                "lowerLeftCellX": llx,
-                                "lowerLeftCellY": lly,
-                                "numberOfCellsX": xsize,
-                                "numberOfCellsY": ysize,
-                                # "srsName": dss_grid_type.name,
-                                # "srsDefinitionType": 1,
-                                # "srsDefinition": srs_def,
-                                # "dataUnits": "mm",
-                                # "dataSource": "INTERNAL",
-                                # "timeZoneID": time_zone.name,
-                                # "timeZoneRawOffset": time_zone.value,
-                                # "isInterval": 1,
-                                # "isTimeStamped": 1,
-                                # "cellSize": cellsize,
-                                # "xCoordOfGridCellZero": 0.0,
-                                # "yCoordOfGridCellZero": 0.0,
-                                # "nullValue": DSS_UNDEFINED_VALUE,
-                                "dataUnits": units,
-                                "data": data,
-                                **create_options,
-                            }
-
-                            record = GriddedData.create(**create_options)
-
-                            try:
-                                status = dss.put(record)
-                                if status != 0:
-                                    error_console.print(
-                                        f"DSS put() failed.  Status is {status}."
-                                    )
-                                else:
-                                    console.print(
-                                        f"[green]{date} F{hr:03d} written to DSS:[/green] {dss_path}"
-                                    )
-                            except Exception as exc:  # noqa: BLE001
-                                error_console.print(
-                                    f"{date} F{hr:03d}: dss.put() failed: {exc}"
-                                )
-                                continue
+                    except Exception as exc:  # noqa: BLE001
+                        error_console.print(
+                            f"{date} F{hr:03d}: dss.put() failed: {exc}"
+                        )
+                        continue
