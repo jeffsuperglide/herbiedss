@@ -37,6 +37,16 @@ python -c "from osgeo import gdal, osr; print(gdal.VersionInfo())"
 
 If `herbiedss dss` reports that GDAL cannot be imported:
 
+Option 1:
+
+1. Install GDAL from a release asset before installing herbiedss.
+
+  ```bash
+  python -m pip install "GDAL @ https://github.com/jeffsuperglide/herbiedss/releases/download/vX.Y.Z/gdal-3.13.3-cp313-cp313-win_amd64.whl"
+  ```
+
+Option 2:
+
 1. Download a GDAL wheel matching your Python version and system architecture from [cgohlke/geospatial-wheels](https://github.com/cgohlke/geospatial-wheels/releases).
 2. Install it, for example:
 
@@ -127,29 +137,29 @@ The command processes every `--date`/`--fxx` combination. A failure for one comb
 
 ## CLI options
 
-| Option | Description |
-| --- | --- |
-| `--date` | **Required.** One or more forecast initialization dates/times. Supply multiple values using `--sep`. |
-| `--model` | Herbie model name, such as `hrrr`, `gfs`, `gefs`, or `rap`. Default: `hrrr`. |
-| `--product` | Model product or subset, such as `sfc` or `prs`. Default: `sfc`. |
-| `--fxx` | One or more forecast lead hours. Default: `0`. |
-| `--sep` | Separator for multiple `--date` and `--fxx` values. Default: `,`. |
-| `--subset` | Regex search string passed to Herbie's download method to limit GRIB messages. |
-| `--variable` | Reserved explicit xarray-variable selection option. The GDAL export path writes GRIB raster bands. |
-| `--grid-system` | Target DSS grid system. Default: `shg`. |
-| `--cellsize` | Target grid cell size in meters. Default: `2000`. |
-| `--boundary-file` | Watershed boundary vector file used as a GDAL cutline. Requires a target grid system. |
-| `--output-bounds` | Destination-grid bounding box: `(minX, minY, maxX, maxY)`. |
-| `--dssfile` | Output HEC-DSS filename or path. Default: `herbiedss.dss`. |
-| `--apart` | DSS pathname A-part. Defaults to the uppercase grid system. |
-| `--bpart` | DSS pathname B-part. Default: `GRID`; with a boundary file, the boundary filename is used. |
-| `--cpart` | DSS pathname C-part. If omitted, it is derived from the GRIB element metadata. |
-| `--fpart` | DSS pathname F-part. Defaults to `<MODEL>-<PRODUCT>-<FXX>`. |
-| `--dss-data-type` | HEC-DSS data type, such as `PER-CUM` or `INST-VAL`. Default: `PER-CUM`. |
-| `--save-dir` | Directory used for downloaded GRIB2 files; also receives the default DSS file when `--dssfile` is not specified. |
-| `--remove-grib` | Delete a GRIB2 file after it is loaded, when Herbie downloaded it during this run. |
-| `--overwrite` | Re-download and overwrite a local GRIB2 file. |
-| `--verbose` | Enable verbose Herbie logging. |
+| Option            | Description                                                                                                      |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `--date`          | **Required.** One or more forecast initialization dates/times. Supply multiple values using `--sep`.             |
+| `--model`         | Herbie model name, such as `hrrr`, `gfs`, `gefs`, or `rap`. Default: `hrrr`.                                     |
+| `--product`       | Model product or subset, such as `sfc` or `prs`. Default: `sfc`.                                                 |
+| `--fxx`           | One or more forecast lead hours. Default: `0`.                                                                   |
+| `--sep`           | Separator for multiple `--date` and `--fxx` values. Default: `,`.                                                |
+| `--subset`        | Regex search string passed to Herbie's download method to limit GRIB messages.                                   |
+| `--variable`      | Reserved explicit xarray-variable selection option. The GDAL export path writes GRIB raster bands.               |
+| `--grid-system`   | Target DSS grid system. Default: `shg`.                                                                          |
+| `--cellsize`      | Target grid cell size in meters. Default: `2000`.                                                                |
+| `--boundary-file` | Watershed boundary vector file used as a GDAL cutline. Requires a target grid system.                            |
+| `--output-bounds` | Destination-grid bounding box: `(minX, minY, maxX, maxY)`.                                                       |
+| `--dssfile`       | Output HEC-DSS filename or path. Default: `herbiedss.dss`.                                                       |
+| `--apart`         | DSS pathname A-part. Defaults to the uppercase grid system.                                                      |
+| `--bpart`         | DSS pathname B-part. Default: `GRID`; with a boundary file, the boundary filename is used.                       |
+| `--cpart`         | DSS pathname C-part. If omitted, it is derived from the GRIB element metadata.                                   |
+| `--fpart`         | DSS pathname F-part. Defaults to `<MODEL>-<PRODUCT>-<FXX>`.                                                      |
+| `--dss-data-type` | HEC-DSS data type, such as `PER-CUM` or `INST-VAL`. Default: `PER-CUM`.                                          |
+| `--save-dir`      | Directory used for downloaded GRIB2 files; also receives the default DSS file when `--dssfile` is not specified. |
+| `--remove-grib`   | Delete a GRIB2 file after it is loaded, when Herbie downloaded it during this run.                               |
+| `--overwrite`     | Re-download and overwrite a local GRIB2 file.                                                                    |
+| `--verbose`       | Enable verbose Herbie logging.                                                                                   |
 
 ## GDAL processing workflow
 

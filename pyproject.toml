@@ -32,6 +32,7 @@
         "rich>=15.0.0",
         "rioxarray>=0.23.0",
         "typer>=0.27.1",
+        "GDAL==3.13.3 ; sys_platform == 'linux' and python_version == '3.13'",
     ]
 
 [project.scripts]
@@ -50,5 +51,7 @@
 [dependency-groups]
     dev = ["cartopy>=0.25.0", "metpy>=1.7.1"]
 
-    # [tool.uv.sources]
-    #     gdal = { url = "https://raw.githubusercontent.com/jeffsuperglide/herbiedss/main/vendor/gdal-3.13.3-cp313-cp313-win_amd64.whl" }
+[tool.uv.sources]
+    gdal = [
+        { url = "https://github.com/jeffsuperglide/herbiedss/releases/download/v1.5.1/gdal-3.13.3-cp313-cp313-win_amd64.whl", marker = "sys_platform == 'win32' and python_version == '3.13' and platform_machine == 'AMD64'" },
+    ]
