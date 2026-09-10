@@ -53,5 +53,5 @@
 
 [tool.uv.sources]
     gdal = [
-        { url = "https://github.com/jeffsuperglide/herbiedss/releases/download/v1.5.1/gdal-3.13.3-cp313-cp313-win_amd64.whl", marker = "sys_platform == 'win32' and python_version == '3.13' and platform_machine == 'AMD64'" },
+        { url = "https://github.com/cgohlke/geospatial-wheels/releases/download/v2026.8.20/gdal-3.13.3-cp313-cp313-win_amd64.whl", marker = "sys_platform == 'win32' and python_version == '3.13' and platform_machine == 'AMD64'" },
     ]

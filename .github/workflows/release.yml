@@ -97,21 +97,11 @@ jobs:
     permissions:
       contents: write # required to create the GitHub release
     steps:
-      - name: Checkout release source
-        uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-
       - name: actions/download-artifact
         uses: actions/download-artifact@v8
         with:
           name: dist
           path: dist/
-
-      - name: Create SHA-256 checksum for vendor file
-        shell: bash
-        run: |
-          sha256sum vendor/gdal-3.13.3-cp313-cp313-win_amd64.whl > vendor/gdal-3.13.3-cp313-cp313-win_amd64.whl.sha256
 
       - name: Set release variables
         id: vars
@@ -134,8 +124,6 @@ jobs:
           files: |
             dist/${{ needs.build.outputs.sdist_file }}
             dist/${{ needs.build.outputs.wheel_file }}
-            vendor/gdal-3.13.3-cp313-cp313-win_amd64.whl
-            vendor/gdal-3.13.3-cp313-cp313-win_amd64.whl.sha256
           overwrite_files: true
           fail_on_unmatched_files: true
         env:

@@ -2,18 +2,18 @@
 
 A command-line tool for downloading NOAA numerical-weather-prediction output through [Herbie](https://github.com/blaylockbk/Herbie), reprojecting and optionally clipping GRIB2 grids with **GDAL**, and writing the resulting rasters to HEC-DSS for use in HEC-HMS, HEC-RAS, and other USACE tools.
 
-`herbiedss` supports HRRR, GFS, GEFS, and other Herbie-supported models. It can write source data onto the USACE Standard Hydrologic Grid (SHG), the NWS Hydrologic Rainfall Analysis Project (HRAP) grid, or another supported DSS grid definition.
+`herbiedss` supports HRRR, GFS, and other Herbie-supported models. It can write source data onto the USACE Standard Hydrologic Grid (SHG), the NWS Hydrologic Rainfall Analysis Project (HRAP) grid, or another supported DSS grid definition (i.e., UTM).
 
 ## Features
 
 - Downloads GRIB2 model output through Herbie for one or more initialization times and forecast lead hours.
-- Processes every raster band in a downloaded GRIB2 product, or limits processing with a regex `--subset` search.
-- Uses GDAL to open GRIB2 files, read per-band GRIB metadata, and warp each band to the requested target grid.
+- Processes raster band number 1 in a downloaded GRIB2 product, or limits processing with a regex `--subset` search.
+- Uses GDAL to open GRIB2 files, read first band GRIB metadata, and warps band to the requested target grid.
 - Reprojects to SHG by default: EPSG:5070 / CONUS Albers Equal Area at a 2,000 m cell size.
 - Supports HRAP and other package-defined DSS grid systems, including their DSS grid-type and spatial-reference definitions.
 - Clips output after reprojection using either a watershed boundary vector file or explicit output bounds.
 - Reads watershed boundaries from formats supported by GDAL/OGR, including shapefiles, GeoJSON, and GeoPackage files.
-- Reprojects boundary geometries automatically as part of the GDAL warp operation.
+- Reprojects boundary geometries automatically as part of the GDAL warp operation; bounding box requires EPSG code.
 - Converts GRIB units to the package's preferred DSS-compatible units.
 - Builds DSS pathname D/E parts from GRIB time metadata and the parameter duration.
 - Flips warped grids to DSS row orientation and replaces missing values with the DSS undefined-value convention.
@@ -42,7 +42,7 @@ Option 1:
 1. Install GDAL from a release asset before installing herbiedss.
 
   ```bash
-  python -m pip install "GDAL @ https://github.com/jeffsuperglide/herbiedss/releases/download/vX.Y.Z/gdal-3.13.3-cp313-cp313-win_amd64.whl"
+  python -m pip install "GDAL @ https://github.com/cgohlke/geospatial-wheels/releases/download/v2026.8.20/gdal-3.13.3-cp313-cp313-win_amd64.whl"
   ```
 
 Option 2:
@@ -95,7 +95,7 @@ herbiedss dss \
   --model hrrr \
   --product sfc \
   --fxx 1,2,3 \
-  --subset "APCP" \
+  --subset ":APCP:" \
   --grid-system shg \
   --boundary-file watershed.geojson \
   --dssfile output.dss \
@@ -108,16 +108,17 @@ When a boundary file is supplied, its filename (without extension) is used as th
 
 ### Clip to explicit bounds
 
-Use `--output-bounds` to set a target-grid bounding box instead of a vector cutline. Bounds are supplied as integer coordinates in the destination grid coordinate system:
+Use `--boundary` to set a target-grid bounding box instead of a vector cutline. Bounds are supplied as integer coordinates in the destination grid coordinate system.  Input is a string delimeted by comma or space.  A `bbox_epsg` is required to define boundary as bounding box coordinate reference system.:
 
 ```bash
 herbiedss dss \
   --date 2026-08-18T00:00 \
   --model hrrr \
   --fxx 6 \
-  --subset "APCP" \
+  --subset ":APCP:" \
   --grid-system shg \
-  --output-bounds "(200000,1200000,800000,1800000)" \
+  --boundary "-125.0011 24.9493 -66.9326 49.5904" \
+  --bbox-epsg 4326 \
   --dssfile output.dss
 ```
 
@@ -129,7 +130,7 @@ herbiedss dss \
   --model hrrr \
   --product sfc \
   --fxx 1,2,3,6 \
-  --subset "APCP" \
+  --subset ":APCP:" \
   --dssfile precip.dss
 ```
 
@@ -140,7 +141,7 @@ The command processes every `--date`/`--fxx` combination. A failure for one comb
 | Option            | Description                                                                                                      |
 | ----------------- | ---------------------------------------------------------------------------------------------------------------- |
 | `--date`          | **Required.** One or more forecast initialization dates/times. Supply multiple values using `--sep`.             |
-| `--model`         | Herbie model name, such as `hrrr`, `gfs`, `gefs`, or `rap`. Default: `hrrr`.                                     |
+| `--model`         | Herbie model name, such as `hrrr`, `gfs`, or `rap`. Default: `hrrr`.                                             |
 | `--product`       | Model product or subset, such as `sfc` or `prs`. Default: `sfc`.                                                 |
 | `--fxx`           | One or more forecast lead hours. Default: `0`.                                                                   |
 | `--sep`           | Separator for multiple `--date` and `--fxx` values. Default: `,`.                                                |
@@ -148,8 +149,8 @@ The command processes every `--date`/`--fxx` combination. A failure for one comb
 | `--variable`      | Reserved explicit xarray-variable selection option. The GDAL export path writes GRIB raster bands.               |
 | `--grid-system`   | Target DSS grid system. Default: `shg`.                                                                          |
 | `--cellsize`      | Target grid cell size in meters. Default: `2000`.                                                                |
-| `--boundary-file` | Watershed boundary vector file used as a GDAL cutline. Requires a target grid system.                            |
-| `--output-bounds` | Destination-grid bounding box: `(minX, minY, maxX, maxY)`.                                                       |
+| `--boundary`      | Watershed boundary vector file used as a GDAL cutline. Requires a target grid system.                            |
+| `--bbox-epsg`     | Destination-grid bounding box: `(minX, minY, maxX, maxY)`.                                                       |
 | `--dssfile`       | Output HEC-DSS filename or path. Default: `herbiedss.dss`.                                                       |
 | `--apart`         | DSS pathname A-part. Defaults to the uppercase grid system.                                                      |
 | `--bpart`         | DSS pathname B-part. Default: `GRID`; with a boundary file, the boundary filename is used.                       |
@@ -167,7 +168,7 @@ For each requested initialization time and forecast lead hour, `herbiedss dss`:
 
 1. Creates a `Herbie` object and downloads the selected GRIB2 product, optionally using `--subset` to restrict the messages downloaded.
 2. Opens the GRIB2 file with `osgeo.gdal`.
-3. Iterates through each GDAL raster band in the file.
+3. Selects GDAL raster band 1 in the file.
 4. Reads GRIB metadata from the band, including element, unit, reference time, valid time, and duration information.
 5. Uses `gdal.Warp()` to reproject the band, with aligned target pixels and bilinear resampling.
 6. Applies the requested target resolution, output bounds, or vector cutline during that same warp operation.
