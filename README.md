@@ -42,7 +42,7 @@ Option 1:
 1. Install GDAL from a release asset before installing herbiedss.
 
   ```bash
-  python -m pip install "GDAL @ https://github.com/cgohlke/geospatial-wheels/releases/download/v2026.8.20/gdal-3.13.3-cp313-cp313-win_amd64.whl"
+  python -m pip install "GDAL @ https://github.com/cgohlke/geospatial-wheels/releases/download/v2026.8.20/gdal-<version>-cp<python>-cp<python>-win_amd64.whl"
   ```
 
 Option 2:
@@ -51,7 +51,7 @@ Option 2:
 2. Install it, for example:
 
    ```bash
-   python -m pip install GDAL-<version>-cp<python>-cp<python>-win_amd64.whl
+   python -m pip install gdal-<version>-cp<python>-cp<python>-win_amd64.whl
    ```
 
 3. Rerun the command.
