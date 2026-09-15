@@ -29,7 +29,7 @@ str
 """
 
 ModelOption: TypeAlias = Annotated[  # noqa: UP040
-    str,
+    str | None,
     typer.Option("--model", "-m", help="NWP model name."),
 ]
 """

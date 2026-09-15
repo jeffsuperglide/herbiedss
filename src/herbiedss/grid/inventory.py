@@ -33,8 +33,8 @@ error_console = Console(stderr=True, style="bold red")
 def inventory(
     # ctx: typer.Context,
     date: DateOption,
-    model: ModelOption = "hrrr",
-    product: ProductOption = "sfc",
+    model: ModelOption = None,
+    product: ProductOption = None,
     fxx: FxxOption = "0",
     sep: SepOption = ",",
     subset: SubsetOption = None,
@@ -123,7 +123,7 @@ def inventory(
                 "verbose": verbose,
                 "overwrite": overwrite,
             }
-
+            kwargs = {key: value for key, value in kwargs.items() if value is not None}
             H = Herbie(**kwargs)
 
             try:
@@ -136,7 +136,9 @@ def inventory(
                 console.print("[yellow]No matching inventory entries found.[/yellow]")
                 raise typer.Exit(code=0)
 
-            table = Table(title=f"Inventory: {model.upper()} {date} F{hr:03d}")
+            table = Table(
+                title=f"Inventory: Model={H.model.upper()}; Product={H.product.upper()}; Date={date}; Forecast Hour=F{hr:03d}"
+            )
             for col in df.columns:
                 table.add_column(str(col))
             for _, row in df.iterrows():
