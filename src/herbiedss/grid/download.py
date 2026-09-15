@@ -39,8 +39,8 @@ error_console = Console(stderr=True, style="bold red")
 def download(
     # ctx: typer.Context,
     date: DateOption,
-    model: ModelOption = "hrrr",
-    product: ProductOption = "sfc",
+    model: ModelOption = None,
+    product: ProductOption = None,
     fxx: FxxOption = "0",
     sep: SepOption = ",",
     save_dir: SaveDirOption = None,
@@ -127,6 +127,7 @@ def download(
                 "verbose": verbose,
                 "overwrite": overwrite,
             }
+            kwargs = {key: value for key, value in kwargs.items() if value is not None}
 
             if save_dir is not None:
                 kwargs["save_dir"] = str(save_dir)

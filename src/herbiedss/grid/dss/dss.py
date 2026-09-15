@@ -109,8 +109,8 @@ DEFAULT_DSS = "herbiedss.dss"
 
 def dss(
     date: DateOption,
-    model: ModelOption = "hrrr",
-    product: ProductOption = "sfc",
+    model: ModelOption = None,
+    product: ProductOption = None,
     fxx: FxxOption = "0",
     sep: SepOption = ",",
     save_dir: SaveDirOption = None,
@@ -355,6 +355,8 @@ def dss(
         "verbose": verbose,
         "overwrite": overwrite,
     }
+    kwargs = {key: value for key, value in kwargs.items() if value is not None}
+
     if save_dir is not None:
         kwargs["save_dir"] = str(save_dir)
 
@@ -403,7 +405,7 @@ def dss(
                 time_zone = TimeZone.UTC
 
                 # read datasets and write to DSS
-                src = H.download(search=subset)
+                src = H.download(search=subset) if subset else H.download()
 
                 with gdal.Open(src) as ds:
                     band_num = 1
