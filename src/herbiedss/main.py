@@ -20,6 +20,7 @@ from rich.console import Console
 from .grid.download import download as download_command
 from .grid.dss.dss import dss as dss_command
 from .grid.inventory import inventory as inventory_command
+from .grid.tellme import tell_me_everything as tellme_command
 
 app = typer.Typer(
     name="herbiedss",
@@ -30,6 +31,7 @@ app = typer.Typer(
 app.command(name="download")(download_command)
 app.command(name="inventory")(inventory_command)
 app.command(name="dss")(dss_command)
+app.command(name="tellme")(tellme_command)
 
 
 console = Console()
