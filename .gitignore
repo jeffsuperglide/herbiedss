@@ -17,3 +17,6 @@ wheels/
 
 # gdal typings
 **/typings
+
+# vs code settings.json
+*/settings.json
