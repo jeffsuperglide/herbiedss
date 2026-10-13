@@ -1,8 +1,12 @@
 """
 tellme.py
 
-Typer command that uses the Herbie tell_me_everything() method providing
-information about the Herbie object.
+Typer command that uses the Herbie ``tell_me_everything()`` method to
+display information about a Herbie object.
+
+The command builds a Herbie object for a given date (and optionally a
+model), then prints a Rich table listing selected attributes of that
+object, such as the data source, product, and file locations.
 
 """
 
@@ -42,6 +46,27 @@ def tell_me_everything(
     date: DateOption,
     model: ModelOption = None,
 ):
+    """
+    Print a table of details about a Herbie object.
+
+    Creates a ``Herbie`` instance and prints selected attributes
+    (description, product, sources, local file, GRIB and index sources,
+    and so on) in a Rich table. Attributes missing from the object are
+    shown as "—".
+
+    Parameters
+    ----------
+    date : DateOption
+        Model run date/time passed to ``Herbie``.
+    model : ModelOption, optional
+        Model name passed to ``Herbie`` (for example "hrrr"). If None,
+        the argument is omitted and Herbie uses its default.
+
+    Returns
+    -------
+    None
+        Output is written to the console.
+    """
     kwargs = {
         "date": date,
         "model": model,
