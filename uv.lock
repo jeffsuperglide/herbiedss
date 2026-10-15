@@ -476,25 +476,7 @@ wheels = [
 name = "gdal"
 version = "3.13.3"
 source = { registry = "https://pypi.org/simple" }
-resolution-markers = [
-    "python_full_version < '3.14' and sys_platform != 'emscripten' and sys_platform != 'win32'",
-]
 sdist = { url = "https://files.pythonhosted.org/packages/78/64/78639efe3f1df027f0028e1faf9719dae609b9fd02d4ffd6c2dd7a9a9757/gdal-3.13.3.tar.gz", hash = "sha256:af547af72d2a153d658c1deb2fe595eccb38c18f3d9d298882fbdeee9806a6d2", size = 940613, upload-time = "2026-08-18T09:32:21.609Z" }
-
-[[package]]
-name = "gdal"
-version = "3.13.3"
-source = { url = "https://raw.githubusercontent.com/jeffsuperglide/herbiedss/main/vendor/gdal-3.13.3-cp313-cp313-win_amd64.whl" }
-resolution-markers = [
-    "python_full_version < '3.14' and sys_platform == 'win32'",
-]
-wheels = [
-    { url = "https://raw.githubusercontent.com/jeffsuperglide/herbiedss/main/vendor/gdal-3.13.3-cp313-cp313-win_amd64.whl", hash = "sha256:081ddbb1c3a31b5e716f773552d232ecd0957023725a6c8d35cc22fd93052081" },
-]
-
-[package.metadata]
-requires-dist = [{ name = "numpy", marker = "extra == 'numpy'", specifier = ">1.0.0" }]
-provides-extras = ["numpy"]
 
 [[package]]
 name = "geopandas"
@@ -528,7 +510,7 @@ wheels = [
 
 [[package]]
 name = "herbie-data"
-version = "2026.3.0"
+version = "2026.9.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "cfgrib" },
@@ -540,17 +522,16 @@ dependencies = [
     { name = "requests" },
     { name = "xarray" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/76/5f/96bcd98f1aeb26400f81595a2a0100c0940f3d2f6a301e92cf6e04b366ba/herbie_data-2026.3.0.tar.gz", hash = "sha256:092d6e521c529c3d40ab039950bae104c70e7eb2eda0c16afde8799247df3184", size = 10808938, upload-time = "2026-03-07T16:05:09.781Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/29/1a/f834bcc6392be3fd22f8e51c43d8f69956ee5e726c2bba5778ff4ae81ab1/herbie_data-2026.9.2.tar.gz", hash = "sha256:59cad8f9d388e2683925308a3ac9c6a8ba910a98ef44977aca529021434c430d", size = 10813447, upload-time = "2026-09-27T04:39:26.6Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/9c/a2/e52eebd269fe97733bebf23d0bc242fe385ebc01e0cc7930b1af1947d9bf/herbie_data-2026.3.0-py3-none-any.whl", hash = "sha256:6c7b107b32947330aa0e443afd2b3873e5f79886a37f4422952c59e7ec105ee6", size = 118188, upload-time = "2026-03-07T16:05:07.923Z" },
+    { url = "https://files.pythonhosted.org/packages/6d/55/1999b41625417e44cea04a44e71f9f83266f381675cbe50a8c486978acdf/herbie_data-2026.9.2-py3-none-any.whl", hash = "sha256:d6558cd8e4b539389418705e1dff5ff73f8766c00c8173bc6ff788368e1f5282", size = 123552, upload-time = "2026-09-27T04:39:23.887Z" },
 ]
 
 [[package]]
 name = "herbiedss"
 source = { editable = "." }
 dependencies = [
-    { name = "gdal", version = "3.13.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.14' and sys_platform == 'linux'" },
-    { name = "gdal", version = "3.13.3", source = { url = "https://raw.githubusercontent.com/jeffsuperglide/herbiedss/main/vendor/gdal-3.13.3-cp313-cp313-win_amd64.whl" }, marker = "python_full_version < '3.14' and sys_platform == 'win32'" },
+    { name = "gdal", marker = "python_full_version < '3.14' and sys_platform == 'linux'" },
     { name = "geopandas" },
     { name = "hecdss" },
     { name = "herbie-data" },
@@ -571,10 +552,9 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "gdal", marker = "python_full_version == '3.13.*' and sys_platform == 'linux'", specifier = "==3.13.3" },
-    { name = "gdal", marker = "python_full_version == '3.13.*' and sys_platform == 'win32'", url = "https://raw.githubusercontent.com/jeffsuperglide/herbiedss/main/vendor/gdal-3.13.3-cp313-cp313-win_amd64.whl" },
     { name = "geopandas", specifier = ">=1.1.4" },
     { name = "hecdss", specifier = ">=0.1.33" },
-    { name = "herbie-data", specifier = ">=2026.3.0" },
+    { name = "herbie-data", specifier = ">=2026.9.2" },
     { name = "pint", specifier = ">=0.25.3" },
     { name = "pyproj", specifier = ">=3.7.2" },
     { name = "rasterio", specifier = ">=1.5.1" },
