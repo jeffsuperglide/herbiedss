@@ -476,25 +476,7 @@ wheels = [
 name = "gdal"
 version = "3.13.3"
 source = { registry = "https://pypi.org/simple" }
-resolution-markers = [
-    "python_full_version < '3.14' and sys_platform != 'emscripten' and sys_platform != 'win32'",
-]
 sdist = { url = "https://files.pythonhosted.org/packages/78/64/78639efe3f1df027f0028e1faf9719dae609b9fd02d4ffd6c2dd7a9a9757/gdal-3.13.3.tar.gz", hash = "sha256:af547af72d2a153d658c1deb2fe595eccb38c18f3d9d298882fbdeee9806a6d2", size = 940613, upload-time = "2026-08-18T09:32:21.609Z" }
-
-[[package]]
-name = "gdal"
-version = "3.13.3"
-source = { url = "https://raw.githubusercontent.com/jeffsuperglide/herbiedss/main/vendor/gdal-3.13.3-cp313-cp313-win_amd64.whl" }
-resolution-markers = [
-    "python_full_version < '3.14' and sys_platform == 'win32'",
-]
-wheels = [
-    { url = "https://raw.githubusercontent.com/jeffsuperglide/herbiedss/main/vendor/gdal-3.13.3-cp313-cp313-win_amd64.whl", hash = "sha256:081ddbb1c3a31b5e716f773552d232ecd0957023725a6c8d35cc22fd93052081" },
-]
-
-[package.metadata]
-requires-dist = [{ name = "numpy", marker = "extra == 'numpy'", specifier = ">1.0.0" }]
-provides-extras = ["numpy"]
 
 [[package]]
 name = "geopandas"
@@ -549,8 +531,7 @@ wheels = [
 name = "herbiedss"
 source = { editable = "." }
 dependencies = [
-    { name = "gdal", version = "3.13.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.14' and sys_platform == 'linux'" },
-    { name = "gdal", version = "3.13.3", source = { url = "https://raw.githubusercontent.com/jeffsuperglide/herbiedss/main/vendor/gdal-3.13.3-cp313-cp313-win_amd64.whl" }, marker = "python_full_version < '3.14' and sys_platform == 'win32'" },
+    { name = "gdal", marker = "python_full_version < '3.14' and sys_platform == 'linux'" },
     { name = "geopandas" },
     { name = "hecdss" },
     { name = "herbie-data" },
@@ -571,7 +552,6 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "gdal", marker = "python_full_version == '3.13.*' and sys_platform == 'linux'", specifier = "==3.13.3" },
-    { name = "gdal", marker = "python_full_version == '3.13.*' and sys_platform == 'win32'", url = "https://raw.githubusercontent.com/jeffsuperglide/herbiedss/main/vendor/gdal-3.13.3-cp313-cp313-win_amd64.whl" },
     { name = "geopandas", specifier = ">=1.1.4" },
     { name = "hecdss", specifier = ">=0.1.33" },
     { name = "herbie-data", specifier = ">=2026.3.0" },
@@ -1335,11 +1315,11 @@ wheels = [
 
 [[package]]
 name = "urllib3"
-version = "2.7.0"
+version = "2.8.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/53/0c/06f8b233b8fd13b9e5ee11424ef85419ba0d8ba0b3138bf360be2ff56953/urllib3-2.7.0.tar.gz", hash = "sha256:231e0ec3b63ceb14667c67be60f2f2c40a518cb38b03af60abc813da26505f4c", size = 433602, upload-time = "2026-05-07T16:13:18.596Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/e3/05/b17359e1cefb4f909b5e40b1b90a496d987258916dbbf88e842c729f510e/urllib3-2.8.0.tar.gz", hash = "sha256:63bf2ead4c879426ebf22ef2a781eeb4aa3b4ae798a0435506f8687fd5bb9b63", size = 458972, upload-time = "2026-09-15T19:29:36.253Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/7f/3e/5db95bcf282c52709639744ca2a8b149baccf648e39c8cc87553df9eae0c/urllib3-2.7.0-py3-none-any.whl", hash = "sha256:9fb4c81ebbb1ce9531cce37674bbc6f1360472bc18ca9a553ede278ef7276897", size = 131087, upload-time = "2026-05-07T16:13:17.151Z" },
+    { url = "https://files.pythonhosted.org/packages/92/9d/c4e665119135114480843e7ab388fa94d8480650450e6f8e26b70d323a4c/urllib3-2.8.0-py3-none-any.whl", hash = "sha256:0cf3cae568d36aa9576b28dfb35f11328f1cb974ca7647d9475ebb86c75ac6e3", size = 135717, upload-time = "2026-09-15T19:29:34.577Z" },
 ]
 
 [[package]]
