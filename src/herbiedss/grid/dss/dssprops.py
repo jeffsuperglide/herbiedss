@@ -104,6 +104,24 @@ class DssDataType(Enum):
         }[self]
 
 
+class TemporalType(Enum):
+    AVERAGE = "average"
+    ACCUMULATION = "accumulation"
+    INSTANTANEOUS = "instantaneous"
+    RUNNING_TOTAL = "running_total"
+    UNKNOWN = "unknown"
+
+    @property
+    def dss_data_type(self) -> DssDataType:
+        return {
+            TemporalType.AVERAGE: DssDataType.PER_AVER,
+            TemporalType.ACCUMULATION: DssDataType.PER_CUM,
+            TemporalType.INSTANTANEOUS: DssDataType.INST_VAL,
+            TemporalType.RUNNING_TOTAL: DssDataType.INST_CUM,
+            TemporalType.UNKNOWN: DssDataType.INVALID,
+        }[self]
+
+
 # GridStructVersion
 class GridStructVersion(Enum):
     VERSION_100 = -100

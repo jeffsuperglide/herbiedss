@@ -1,24 +1,30 @@
 """
 CLI command for downloading numerical weather prediction GRIB2 data with
-Herbie, reprojecting each raster band onto a hydrologic grid, and writing the
-resulting gridded records to an HEC-DSS file.
+Herbie, reprojecting the first raster band onto a hydrologic grid, and writing
+the resulting gridded record to an HEC-DSS file.
 
 The `dss` command supports one or more model initialization times and forecast
 lead times. For each requested model run and forecast hour, it:
 
-1. Downloads the requested GRIB2 product through Herbie.
-2. Opens the GRIB2 file with GDAL.
-3. Reprojects each GRIB raster band to the requested target spatial reference
-   system and cell size.
-4. Optionally clips the output to a watershed boundary or explicit output
-   bounds.
-5. Converts GRIB units to the package's preferred DSS-compatible units.
-6. Builds a DSS pathname using user-supplied pathname parts together with GRIB
+1. Downloads the requested GRIB2 product through Herbie (optionally limited to
+   messages matching a `--subset` search string).
+2. Reads GRIB message metadata (units, variable, times) with ecCodes and
+   resolves the DSS unit, DSS data type, and C-part name from it.
+3. Opens the GRIB2 file with GDAL and extracts band 1 as a single-band VRT.
+4. Validates the source grid (spatial reference present, no un-rewrapped global
+   0..360 longitude axis).
+5. Reprojects the band to the target spatial reference system (SHG or HRAP)
+   and cell size using bilinear resampling, with target-aligned pixels.
+6. Optionally clips the output to a watershed boundary or an explicit bounding
+   box.
+7. Replaces missing values with the DSS undefined-value convention and flips
+   the raster vertically, since DSS grids are stored south-to-north.
+8. Verifies that the output grid is unrotated, has the expected cell size, and
+   is aligned to the DSS cell grid, then computes the lower-left cell indices.
+9. Builds a DSS pathname from user-supplied pathname parts together with GRIB
    metadata such as reference time, valid time, parameter, and duration.
-7. Flips the raster vertically and replaces missing values with the DSS
-   undefined-value convention.
-8. Creates and writes `hecdss.gridded_data.GriddedData` records to an
-   HEC-DSS file.
+10. Creates and writes a `hecdss.gridded_data.GriddedData` record to an
+    HEC-DSS file.
 
 The default output grid system is SHG, using EPSG:5070 and a 2,000-meter cell
 size. HRAP or another supported `GridSystem` may be selected through the CLI.
@@ -47,15 +53,24 @@ and save them to a specific DSS file:
 Notes
 -----
 - DSS pathname A-, B-, C-, and F-parts may be specified with command-line
-  options. When omitted, sensible defaults are derived from the selected grid
-  system, boundary filename, GRIB element metadata, model, product, and
-  forecast hour.
-- Each raster band in the downloaded GRIB2 file becomes a separate DSS
-  gridded-data record.
-- A failure while writing one date/forecast-hour combination is reported to
-  stderr and does not stop processing of later combinations.
-- `--boundary` requires a target `--grid-system`, because clipping occurs
-  after GDAL reprojection.
+  options. When omitted, defaults are derived as follows: A-part from the
+  grid system (e.g. "SHG"), B-part from the boundary filename (title-cased)
+  or `--bpart` (default "GRID"), C-part from the resolved GRIB element
+  (`GribElementResolver`), and F-part from "<MODEL>-<PRODUCT>" in upper case.
+  D- and E-parts come from the GRIB reference/valid times and duration.
+- Only the first raster band (band 1) of the downloaded GRIB2 file is
+  processed and written as a DSS gridded-data record. Use `--subset` to
+  select the message of interest.
+- Output units are determined from the GRIB metadata and converted to the
+  package's preferred DSS-compatible units (override with `--preferred-units`).
+- Errors from `dss.put()` for a given date/forecast-hour combination are
+  reported to stderr and processing continues with the next combination.
+  Other failures (download, GDAL open/warp, grid validation) raise exceptions
+  and are not caught by the command.
+- `--boundary` clipping occurs after GDAL reprojection, so the output grid
+  system (`--grid-system`, default "shg") determines the clipping CRS.
+- GDAL's Python bindings are required; an ImportError with installation
+  instructions is raised if they are unavailable.
 """
 
 from pathlib import Path
@@ -72,6 +87,7 @@ from herbiedss.grid.dss.dss_helpers import (
     _build_dss_pathname,
     _gdal_warp_options,
     _parse_path_or_bbox,
+    _parse_preferred_units,
     _to_dss_undefined,
 )
 from herbiedss.grid.dss.dssprops import (
@@ -94,6 +110,7 @@ from herbiedss.options import (
     SubsetOption,
     VerboseOption,
 )
+from herbiedss.utils import eccoding
 from herbiedss.utils.grib_element import GribElementResolver
 from herbiedss.utils.source_info import _source_grid_info
 from herbiedss.utils.units import Units
@@ -171,13 +188,13 @@ def dss(
             ),
         ),
     ] = "shg",
-    dss_data_type: Annotated[
-        DssDataType | None,
-        typer.Option(
-            "--dss-data-type",
-            help="A Dss data type.",
-        ),
-    ] = None,
+    # dss_data_type: Annotated[
+    #     DssDataType | None,
+    #     typer.Option(
+    #         "--dss-data-type",
+    #         help="A Dss data type.",
+    #     ),
+    # ] = None,
     cellsize: Annotated[
         GridCellsize,
         typer.Option("--cellsize", help="Cell size for the DSS grid"),
@@ -203,25 +220,38 @@ def dss(
             help="EPSG code of the bbox (only used when --boundary is a bbox).",
         ),
     ] = None,
+    preferred_units: Annotated[
+        dict[str, str] | None,
+        typer.Option(
+            "--preferred-units",
+            help="Dictionary of preferred units to convert from/to.",
+            parser=_parse_preferred_units,
+        ),
+    ] = None,
 ) -> None:
     """
-    Load each date/fxx combination with Herbie's xarray(), optionally reproject
-    the field onto SHG or HRAP (clipping to a watershed boundary if supplied),
-    extract a 2D numpy grid and its metadata, build a DSS pathname whose D/E
-    parts come from the grid's own start/end time, and write the record into a
-    HEC-DSS file.
+    Download GRIB2 data with Herbie, reproject band 1 onto a hydrologic grid
+    with GDAL, and write it to an HEC-DSS file as a gridded record.
 
     For every combination of model run date and forecast lead time, this
-    command builds a `Herbie` object, opens the (optionally subset) GRIB2
-    output as an xarray Dataset/DataArray via `Herbie.xarray()`, extracts a
-    single 2D field with `_extract_grid_and_metadata` (reprojecting onto a
-    hydrologic grid and clipping to a watershed boundary if requested),
-    derives a DSS pathname from the user-supplied A/B/C/F parts and the
-    grid's own start/end time, and writes the resulting `GriddedData`
-    record into the target HEC-DSS file. Failures for an individual
-    date/fxx combination (xarray/extraction/reprojection errors, or
-    `dss.put()` failures) are logged to stderr and that combination is
-    skipped rather than aborting the whole run.
+    command builds a `Herbie` object and downloads the (optionally
+    subset) GRIB2 file with `Herbie.download()`. It reads message metadata
+    with ecCodes (units, variable, reference/valid times) and resolves the
+    DSS unit, data type, and C-part via `Units` and `GribElementResolver`.
+    It then opens the file with GDAL, builds a single-band VRT of band 1,
+    and warps it to the target SHG or HRAP spatial reference at the
+    requested cell size. If `boundary` is supplied, the warp is clipped
+    to it. Missing cells are set to the DSS undefined value, the array is
+    flipped vertically, the output grid is validated (unrotated, expected
+    cell size, aligned to the DSS cell grid), and the lower-left cell
+    indices are computed. A DSS pathname is built from the A/B/C/F parts
+    and the GRIB metadata, and the resulting `GriddedData` record is
+    written with `HecDss.put()`.
+
+    Only band 1 of each downloaded file is processed. A non-zero status or
+    exception from `dss.put()` is reported to stderr and the loop moves on
+    to the next combination. Other errors (download, GDAL open/warp,
+    source-grid or alignment validation) raise and stop the run.
 
     Parameters
     ----------
@@ -232,10 +262,12 @@ def dss(
         interpret.
     model : ModelOption, optional
         Name of the NWP model to download (e.g. "hrrr", "gfs", "rap").
-        Case-insensitive. Defaults to "hrrr".
+        Case-insensitive. If `None`, Herbie's default is used. Also used
+        in the default F-part and the resolved DSS metadata.
     product : ProductOption, optional
         Output variable product/file type for the model (e.g. "sfc",
-        "prs"). Model-dependent. Defaults to "sfc".
+        "prs"). Model-dependent. If `None`, Herbie's default is used.
+        Also used in the default F-part.
     fxx : FxxOption, optional
         One or more forecast lead times in hours, as a
         separator-delimited string (see `sep`). Parsed via
@@ -250,9 +282,9 @@ def dss(
         data directory is used for downloads and the DSS file is created
         in the current working directory.
     subset : SubsetOption, optional
-        Regular-expression search string passed to `Herbie.xarray(search=...)`
-        to restrict which GRIB messages/variables are loaded. If `None`,
-        the entire file's contents are loaded.
+        Regular-expression search string passed to
+        `Herbie.download(search=...)` to restrict which GRIB messages are
+        downloaded. If `None`, the entire file is downloaded.
     verbose : VerboseOption, optional
         If `True`, print additional diagnostic output while Herbie locates
         and downloads each file. Defaults to `False`.
@@ -265,54 +297,66 @@ def dss(
         inside `save_dir`. Defaults to `"herbiedss.dss"`.
     apart : str, optional
         A-part of the DSS pathname: grid reference system (e.g. "SHG",
-        "HRAP") or model name. Defaults to `""`.
+        "HRAP") or model name. If empty, the upper-case `grid_system`
+        name is used; otherwise the value is title-cased. Defaults to `""`.
     bpart : str, optional
         B-part of the DSS pathname: region, watershed, or location name.
-        Defaults to `""`.
+        Ignored when `boundary` is a file path, in which case the
+        title-cased boundary file name (without extension) is used.
+        Defaults to `"GRID"`.
     cpart : str, optional
         C-part of the DSS pathname: data parameter (e.g. "PRECIP",
-        "TMP2M"). Defaults to `""`.
+        "TMP2M"). If empty, the DSS base name from `GribElementResolver`
+        for the GRIB variable is used. Defaults to `""`.
     fpart : str, optional
-        F-part of the DSS pathname: version or descriptive label.
-        Defaults to `""`.
-    grid_system : GridSystem or None, optional
+        F-part of the DSS pathname: version or descriptive label. If
+        empty, "<MODEL>-<PRODUCT>" in upper case is used. Defaults to `""`.
+    grid_system : GridSystem, optional
         Hydrologic grid to reproject the model field onto before writing
         to DSS: `"shg"` (Albers equal-area, 2000 m native cell size) or
-        `"hrap"` (polar stereographic, 4762.5 m native cell size). If
-        `None`, the grid is written in its native model projection.
+        `"hrap"` (polar stereographic, 4762.5 m native cell size). This
+        also selects the DSS grid type and spatial reference definition
+        (falling back to SHG if no WKT is defined for the system).
         Defaults to `"shg"`.
-    boundary : str or None, optional
-        Path to a watershed boundary vector file (shapefile, GeoJSON,
-        GeoPackage, etc.) used to clip the reprojected grid. GDAL will try
-        to read the spatial reference from the boundary (vector layer) when
-        it is available.  Explicitly define the boundary spatial reference
-        using the bbox_epsg option.  A boundary defined as a bounding box (bbox)
-        requires `"bbox_epsg"` definition.  Bounding box entry is a string formated
-        as xmin,ymin,xmax,ymax or "xmin ymin xmax ymax". Defaults to `None`.
-    bbox_epsg: integer or None, optional
-        EPSG code of the boundary.  Defaults to destination/output CRS if `None`.
+    cellsize : GridCellsize, optional
+        Output cell size in meters, used for the warp resolution, the
+        alignment checks, and the DSS record. Defaults to 2000.
+    boundary : str or Path or None, optional
+        Boundary used to clip the reprojected grid, parsed by
+        `_parse_path_or_bbox`. Either a path to a vector file (shapefile,
+        GeoJSON, GeoPackage, etc.) or a bounding box formatted as
+        "xmin,ymin,xmax,ymax" or "xmin ymin xmax ymax". GDAL reads the
+        spatial reference from a vector file when available. A bounding
+        box requires `bbox_epsg`. Defaults to `None` (no clipping).
+    bbox_epsg : int or None, optional
+        EPSG code of the boundary bounding box. Defaults to the
+        destination/output CRS if `None`.
+    preferred_units : dict[str, str] or None, optional
+        Mapping of units to preferred units, parsed by
+        `_parse_preferred_units` and passed to `Units`. Used to convert
+        the GRIB units to the DSS data units. Defaults to `None`, which
+        uses the package defaults.
 
     Returns
     -------
     None
-        This command does not return a value. Progress and results for
-        each date/fxx combination (grid shape, variable, units, grid
-        system, DSS pathname, and write confirmation) are printed to
-        stdout via `console.print`; errors are printed to stderr via
+        Progress for each date/fxx combination (GDAL version, source grid
+        info, band shape, lower-left cell, valid-cell count, min/max, and
+        write confirmation with the DSS pathname) is printed to stdout via
+        `console.print`. `dss.put()` errors are printed to stderr via
         `error_console.print`.
 
     Raises
     ------
-    typer.Exit
-        Raised with exit code 1 if `boundary` is supplied without
-        `grid_system` also being set, since clipping cannot be performed
-        without a target grid to reproject onto first.
+    ImportError
+        If the GDAL Python bindings cannot be imported.
+    RuntimeError
+        If band 1 cannot be opened, the source grid has no spatial
+        reference, a global 0..360 longitude grid is not rewrapped by GDAL,
+        the warp fails or returns an unexpected band count or shape, the
+        warped grid is rotated, or the output resolution or origin does not
+        match the DSS cell grid.
     """
-
-    # variable : str or None, optional
-    #     Explicit xarray variable name to extract when `subset` matches
-    #     more than one variable in the returned Dataset. If `None`, the
-    #     first variable is used. Defaults to `None`.
 
     # try to import gdal
     try:
@@ -375,12 +419,7 @@ def dss(
                     if isinstance(boundary, Path)
                     else bpart
                 )
-                _fpart = (
-                    f"{model}-{product}-{hr:03d}".upper() if len(fpart) <= 0 else fpart
-                )
-
-                if dss_data_type is None:
-                    dss_data_type = DssDataType.PER_CUM
+                _fpart = f"{model}-{product}".upper() if len(fpart) <= 0 else fpart
 
                 #  DSS options
                 dss_grid_type = DssGridType.from_grid_system(grid_system.upper())
@@ -407,6 +446,42 @@ def dss(
                 # read datasets and write to DSS
                 src = H.download(search=subset) if subset else H.download()
 
+                # use ec codes to get metadata
+                eccodes_metadata = eccoding._read_eccodes_metadata(src, message_index=0)
+                u = Units(preferred=preferred_units)
+                raw_units = eccodes_metadata.get("units")
+                units = u.to_dss_unit(str(raw_units))
+
+                resolved_eccodes_metadata = eccoding._resolve_dss_metadata(
+                    eccodes_metadata,
+                    model=model,  # type: ignore
+                    product=product,  # type: ignore
+                    fxx=hr,
+                    dss_units=units.strip(),
+                )
+
+                # build dss path.
+                # cpart comes from user input or GRIB_COMMENT
+                grib_element: str = resolved_eccodes_metadata.get(
+                    "variable", ""
+                ).strip()
+
+                resolver = GribElementResolver()
+
+                resolver_info = resolver.resolve(grib_element)
+
+                _cpart = resolver_info.dss_base_name if len(cpart) <= 0 else cpart
+
+                # build the dsspath
+                dss_path = _build_dss_pathname(
+                    _apart,
+                    _bpart,
+                    _cpart,
+                    _fpart,
+                    resolved_eccodes_metadata,  # replacing band_meta
+                    # element_info.duration_value,
+                )
+
                 with gdal.Open(src) as ds:
                     band_num = 1
                     band = ds.GetRasterBand(band_num)
@@ -414,7 +489,7 @@ def dss(
                         raise RuntimeError(
                             f"Could not open GRIB band {band_num}; skipping."
                         )
-                    band_meta = band.GetMetadata()
+                    # band_meta = band.GetMetadata()
                     src_nodata = band.GetNoDataValue()
 
                     # get the band, its metadata, dataset, and build a dss path
@@ -491,14 +566,6 @@ def dss(
 
                     single_band_warp_kwargs["dstNodata"] = float(WARP_NODATA)
 
-                    # get the band spatial reference from the dataset.
-                    # src_wkt = band_vrt.GetProjection()
-                    # src_srs = osr.SpatialReference()
-                    # src_srs.ImportFromWkt(src_wkt)
-                    # src_srs.SetAxisMappingStrategy(
-                    #     osr.OAMS_TRADITIONAL_GIS_ORDER
-                    # )
-
                     # warp
                     warp_ds = gdal.Warp(
                         "",  # empty string => no filename, return a Dataset
@@ -517,34 +584,6 @@ def dss(
                             f"Expected one output raster band for source band {band_num}; "
                             f"got {warp_ds.RasterCount}."
                         )
-
-                    # getting some meta data
-                    # GRIB_REF_TIME is the HRRR cycle or model-run time.
-                    band_meta = band.GetMetadata()
-
-                    # build dss path.
-                    # cpart comes from user input or GRIB_COMMENT
-                    grib_element: str = band_meta.get("GRIB_ELEMENT", "").strip()
-                    element_resolver = GribElementResolver()
-                    element_info = element_resolver.resolve(grib_element)
-                    _cpart = (
-                        element_info.dss_base_name.title() if len(cpart) <= 0 else cpart
-                    )
-
-                    # build the dsspath
-                    dss_path = _build_dss_pathname(
-                        _apart,
-                        _bpart,
-                        _cpart,
-                        _fpart,
-                        band_meta,
-                        element_info.duration_value,
-                    )
-
-                    # convert the units
-                    grib_unit: str = band_meta.get("GRIB_UNIT", "").strip()
-                    grib_unit = grib_unit.strip().strip("[]").lower()
-                    units = Units().to_preferred(grib_unit)
 
                     # read the data as an array from the warp.
                     # have to flip the data for DSS
@@ -612,7 +651,7 @@ def dss(
                     create_options = {
                         "path": dss_path,
                         "type": dss_grid_type.value,
-                        "dataType": dss_data_type.code,
+                        "dataType": resolver_info.dss_data_type.code,
                         "lowerLeftCellX": llx,
                         "lowerLeftCellY": lly,
                         "numberOfCellsX": xsize,
@@ -659,4 +698,3 @@ def dss(
                         error_console.print(
                             f"{date} F{hr:03d}: dss.put() failed: {exc}"
                         )
-                        continue
