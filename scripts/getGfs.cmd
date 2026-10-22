@@ -58,7 +58,7 @@ for /L %%N in (123,3,384) do (
     )
 )
 
-for /f "usebackq delims=" %%I in (`%PY% -c "from datetime import datetime, timezone;d=datetime.now(timezone.utc);d=d.replace(hour=(d.hour//6)*6,minute=0,second=0,microsecond=0);print(d.replace(tzinfo=None).isoformat(timespec='minutes'))"`) do set "UTC_CYCLE=%%I"
+for /f "usebackq delims=" %%I in (`%PY% -c "from datetime import datetime, timezone;from zoneinfo import ZoneInfo;d=datetime.now(ZoneInfo('America/Panama'));d=d.replace(hour=(d.hour//6)*6,minute=0,second=0,microsecond=0);print(d.replace(tzinfo=None).isoformat(timespec='minutes'))"`) do set "UTC_CYCLE=%%I"
 
 if not exist "%HERBIEDSS%.exe" (
   echo ERROR: Script not found: %HERBIEDSS%
