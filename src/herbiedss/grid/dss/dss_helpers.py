@@ -1,4 +1,5 @@
-from datetime import UTC, datetime, timedelta
+import json
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, NamedTuple
 
@@ -9,6 +10,12 @@ from herbiedss.grid.dss.dssprops import DSS_UNDEFINED_VALUE
 
 
 class BBox(NamedTuple):
+    """Axis-aligned bounding box as ``(xmin, ymin, xmax, ymax)`` floats.
+
+    Coordinates are in the CRS given separately (see ``--bbox-epsg``); the
+    tuple itself carries no CRS information.
+    """
+
     xmin: float
     ymin: float
     xmax: float
@@ -17,10 +24,39 @@ class BBox(NamedTuple):
 
 def _parse_path_or_bbox(value: str | None) -> Path | BBox | None:
     """
-    Accepts either:
-      - a file path; returns Path
-      - four integers (comma or space separated) returns; tuple[int, int, int, int]
-      - fall through to None
+    Parse a CLI option that is either a vector-file path or a bounding box.
+
+    The value is interpreted in this order:
+
+    1. If it names an existing path, or its suffix (case-insensitive) is one of
+       ``.shp``, ``.geojson`` or ``.json``, it is returned as a `Path`. The
+       file's existence is not required for those suffixes.
+    2. Otherwise it is split on commas and/or whitespace and must yield exactly
+       four numbers ``xmin, ymin, xmax, ymax``, returned as a `BBox` of floats.
+
+    Parameters
+    ----------
+    value : str or None
+        Raw option value, e.g. ``"basin.shp"``, ``"-100,30,-90,40"`` or
+        ``"-100 30 -90 40"``.
+
+    Returns
+    -------
+    Path or BBox or None
+        `None` if ``value`` is `None` or an empty string; a `Path` for
+        file-like input; a `BBox` for coordinate input.
+
+    Raises
+    ------
+    typer.BadParameter
+        If the value does not split into exactly four parts, or if the box
+        violates ``xmin < xmax`` and ``ymin < ymax``.
+
+    Notes
+    -----
+    Values are converted with `float`, so non-integer coordinates are accepted.
+    A part that cannot be converted to a number raises a plain `ValueError`
+    from `float`, not `typer.BadParameter`.
     """
     if value is None:
         return
@@ -54,6 +90,42 @@ def _parse_path_or_bbox(value: str | None) -> Path | BBox | None:
         return bbox
 
 
+def _parse_preferred_units(value: str) -> dict[str, str]:
+    """
+    Parse a JSON string mapping source units to preferred units.
+
+    Parameters
+    ----------
+    value : str
+        JSON object whose keys and values are all strings,
+        e.g. ``'{"K": "C"}'``.
+
+    Returns
+    -------
+    dict[str, str]
+        The parsed mapping.
+
+    Raises
+    ------
+    typer.BadParameter
+        If the string is not valid JSON, or is not a JSON object with only
+        string keys and string values.
+    """
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError as exc:
+        raise typer.BadParameter(f"Invalid JSON: {exc.msg}") from exc
+
+    if not isinstance(parsed, dict) or not all(
+        isinstance(k, str) and isinstance(v, str) for k, v in parsed.items()
+    ):
+        raise typer.BadParameter(
+            'Expected a JSON object of string pairs, e.g. \'{"K": "C"}\''
+        )
+
+    return parsed
+
+
 def _pd_to_datetime(value: Any) -> datetime:
     """Coerce a numpy/pandas datetime64 scalar into a stdlib datetime (UTC-naive)."""
     import pandas as pd
@@ -72,15 +144,18 @@ def _dss_time(dt: datetime, *, is_end: bool = False) -> str:
     """
     Format a datetime for the D- or E-part of an HEC-DSS gridded-data pathname.
 
+
     HEC-DSS grid pathname time parts use the format ``DDMMMYYYY:HHMM``. This
     helper applies the DSS interval-end convention for midnight timestamps:
     when a timestamp is the end of an interval and occurs exactly at 00:00,
     it is represented as ``2400`` on the preceding calendar date rather than
     as ``0000`` on the current date.
 
+
     For example, an interval ending at midnight UTC on 25 December 2005 is
-    formatted as ``24DEC2005:2400`` when `is_end=True`. The same datetime is
-    formatted as ``25DEC2005:0000`` when `is_end=False`.
+    formatted as ``24Dec2005:2400`` when `is_end=True`. The same datetime is
+    formatted as ``25Dec2005:0000`` when `is_end=False`.
+
 
     Parameters
     ----------
@@ -92,27 +167,34 @@ def _dss_time(dt: datetime, *, is_end: bool = False) -> str:
     is_end : bool, optional
         Whether `dt` represents the end of a time interval.
 
+
         If `True` and `dt` falls exactly at midnight (hour and minute are both
         zero), the function subtracts one calendar day and formats the time as
         ``2400``. For all other times, the timestamp is formatted normally.
 
+
         If `False`, midnight is formatted as ``0000`` on the datetime's own
         calendar date. Defaults to `False`.
+
 
     Returns
     -------
     str
-        A DSS-compatible time string in ``DDMMMYYYY:HHMM`` format. The month
-        abbreviation is converted to uppercase by the caller if a fully
-        uppercase DSS pathname is required.
+        A time string in ``DDMMMYYYY:HHMM`` format. The month abbreviation is
+        produced by ``strftime("%b")``, so it is mixed case (``Dec``) and
+        locale-dependent; it is NOT upper-cased here. Callers that need a
+        fully uppercase DSS pathname must upper-case the result.
+
 
         Examples include:
 
-        - ``"25DEC2005:1200"`` for noon on 25 December 2005.
-        - ``"25DEC2005:0000"`` for a start time at midnight on 25 December
+
+        - ``"25Dec2005:1200"`` for noon on 25 December 2005.
+        - ``"25Dec2005:0000"`` for a start time at midnight on 25 December
           2005.
-        - ``"24DEC2005:2400"`` for an interval ending at midnight on
+        - ``"24Dec2005:2400"`` for an interval ending at midnight on
           25 December 2005.
+
 
     Notes
     -----
@@ -138,34 +220,31 @@ def _build_dss_pathname(
     c_part: str,
     f_part: str,
     meta: dict,
-    duration: int | None,
 ) -> str:
     """
-    Build an HEC-DSS gridded-data pathname from DSS pathname parts and GRIB
-    band metadata.
+    Build an HEC-DSS gridded-data pathname from caller-supplied pathname parts
+    and the timing metadata produced by `_extract_grid_metadata`.
+
 
     The returned pathname follows the standard DSS form:
 
+
         /A/B/C/D/E/F/
 
+
     The A-, B-, C-, and F-parts are supplied by the caller. The D- and E-parts
-    are derived from GDAL GRIB metadata:
+    are derived from ``meta["start_time"]`` and ``meta["end_time"]``:
 
-    - For instantaneous fields, identified here by product definition template
-      number (`GRIB_PDS_PDTN`) other than 8, the D-part is the GRIB valid time
-      and the E-part is blank.
-    - For interval/accumulation fields using template 8, the D-part represents
-      the beginning of the processing interval and the E-part represents the
-      interval end/valid time.
-    - When template 8 reports zero forecast seconds, the GRIB reference time is
-      used as the interval start; otherwise, the interval start is calculated
-      by subtracting the interval duration from the valid time.
-    - The explicit `duration` argument, when provided, takes precedence over
-      `GRIB_FORECAST_SECONDS` when calculating the interval length.
 
-    All times are interpreted as Unix timestamps in UTC and formatted by
-    `_dss_time`. The resulting pathname is returned exactly as assembled; this
-    function does not normalize the case of individual pathname parts.
+    - The D-part is ``start_time`` formatted with `_dss_time` (``is_end=False``).
+    - The E-part is ``end_time`` formatted with `_dss_time` (``is_end=True``),
+      so an end time at exactly 00:00 is written as ``2400`` on the previous
+      day.
+
+
+    The parts are inserted exactly as given; this function does not normalize
+    the case of any part (including the month abbreviation from `_dss_time`).
+
 
     Parameters
     ----------
@@ -182,69 +261,44 @@ def _build_dss_pathname(
         DSS F-part containing a version, source, model-product label, forecast
         identifier, or other descriptive qualifier.
     meta : dict
-        GDAL GRIB band metadata. The following keys are required and must be
-        convertible to integers:
+        Metadata dictionary as returned by `_extract_grid_metadata`. Required
+        keys:
 
-        - ``"GRIB_REF_TIME"``: Model/reference time as a Unix timestamp.
-        - ``"GRIB_VALID_TIME"``: Valid/end time as a Unix timestamp.
-        - ``"GRIB_FORECAST_SECONDS"``: Forecast lead time or processing
-          interval length in seconds.
-        - ``"GRIB_PDS_PDTN"``: GRIB product definition template number.
 
-        Template number 8 is treated as an interval-based product; all other
-        template numbers are treated as instantaneous products.
-    duration : int | None
-        Optional processing-interval duration in hours. For template 8
-        products, a non-``None`` value overrides the interval inferred from
-        ``GRIB_FORECAST_SECONDS``. Ignored for non-template-8 products.
+        - ``"start_time"``: `datetime` for the D-part.
+        - ``"end_time"``: `datetime` for the E-part.
+
 
     Returns
     -------
     str
         A DSS pathname in the form ``"/A/B/C/D/E/F/"``.
 
-        For instantaneous products, the returned path has a blank E-part:
 
-        ``/A/B/C/VALID_TIME//F/``
+    Raises
+    ------
+    KeyError
+        If ``start_time`` or ``end_time`` is missing from `meta`.
+    AttributeError
+        If ``end_time`` is `None`. `_extract_grid_metadata` sets it to `None`
+        for instantaneous grids, which this function does not currently
+        handle (no blank E-part is produced).
 
-        For template 8 interval products, the path includes both interval
-        bounds:
-
-        ``/A/B/C/START_TIME/END_TIME/F/``
 
     Notes
     -----
-    This function assumes GRIB metadata timestamps are UTC Unix epoch seconds.
-    It recognizes `GRIB_PDS_PDTN == 8` as an interval/accumulation product.
-    Other product definition templates are written as instantaneous grids,
-    regardless of whether their underlying meteorological quantity is commonly
-    interpreted over a period.
+    The current implementation assumes interval-style metadata, as noted by
+    the inline comment in the code (GRIB product definition template 0 is
+    assumed). It does not read ``GRIB_PDS_PDTN``, ``GRIB_REF_TIME``,
+    ``GRIB_VALID_TIME`` or ``GRIB_FORECAST_SECONDS``, and it has no
+    ``duration`` override. Times are assumed to be UTC.
     """
-    grib_ref_time = int(meta["GRIB_REF_TIME"])
-    grib_valid_time = int(meta["GRIB_VALID_TIME"])
-    grib_forecast_seconds = int(meta["GRIB_FORECAST_SECONDS"])
-    grib_pds_pdtn = int(meta["GRIB_PDS_PDTN"])
-
-    start_time = datetime.fromtimestamp(grib_ref_time, tz=UTC)
-    end_time = datetime.fromtimestamp(grib_valid_time, tz=UTC)
+    start_time = meta["start_time"]
+    end_time = meta["end_time"]
 
     # assuming what comes in is grib_pds_pdtn == 0
-    d_part = _dss_time(end_time, is_end=True)
-    e_part = ""
-
-    if grib_pds_pdtn == 8:
-        grib_forecast_seconds_interval = (
-            timedelta(hours=duration)
-            if duration
-            else timedelta(seconds=grib_forecast_seconds)
-        )
-        start_time_process = end_time - grib_forecast_seconds_interval
-        d_part = (
-            _dss_time(start_time)
-            if grib_forecast_seconds == 0
-            else _dss_time(start_time_process)
-        )
-        e_part = _dss_time(end_time, is_end=True)
+    d_part = _dss_time(start_time)
+    e_part = _dss_time(end_time, is_end=True)
 
     return f"/{a_part}/{b_part}/{c_part}/{d_part}/{e_part}/{f_part}/"
 
@@ -254,43 +308,60 @@ def _extract_grid_metadata(
     var_name: str | None,
 ) -> dict:
     """
-    Pull a single 2D numpy grid and its georeferencing + timing metadata out of
-    whatever Herbie's .xarray() call returns (a Dataset with one or more variables,
-    or a single DataArray).
+    Select one variable from the object returned by Herbie's ``.xarray()`` and
+    collect its descriptive and timing metadata.
 
-    If `grid_system` is given ("shg" or "hrap"), the field is first reprojected
-    from its native model grid (HRRR Lambert Conformal, GFS/GEFS lat-lon, etc.)
-    onto that hydrologic grid, using the CRS Herbie exposes via `da.herbie.crs`.
-    If `boundary_path` is also given, the reprojected field is clipped to that
-    watershed boundary vector file (shapefile/GeoJSON/GeoPackage) after
-    reprojection.
+
+    Only the metadata is gathered here. The function does not reproject, clip,
+    squeeze or otherwise modify the data, and it does not return the array.
+
 
     Parameters
     ----------
     ds : Any
-        Object returned by `Herbie.xarray()`: either an `xarray.Dataset`
-        containing one or more variables, or a single `xarray.DataArray`.
+        Object returned by `Herbie.xarray()`. Only an `xarray.Dataset` is
+        processed; any other type (including a bare `xarray.DataArray`)
+        causes an empty dict to be returned.
     var_name : str or None
-        Name of the data variable to extract if `ds` is a `Dataset` with
-        multiple variables. If `None`, the first variable in the dataset
-        is used. Ignored if `ds` is already a `DataArray`.
+        Name of the data variable to use. If `None`, the first data variable
+        in the dataset is used.
+
 
     Returns
     -------
     dict
-        A metadata dictionary including (where available): `variable`,
-          `units`, `long_name`, `dims`, `valid_time`, `start_time`,
-          `end_time`, `center`, native `lat_min`/`lat_max`/`lon_min`/
-          `lon_max`, `source_crs`, and, if `grid_system` was supplied,
-          `grid_system`, `target_crs`, `cell_size`, `lower_left_x`,
-          `lower_left_y`, and final `shape`.
+        Empty if `ds` is not a `Dataset`. Otherwise contains:
+
+
+        - ``variable``: variable name, or ``"unknown"``.
+        - ``units``: ``units`` attribute, or `None`.
+        - ``long_name``: ``long_name`` attribute, falling back to
+          ``GRIB_name``.
+        - ``step_type``: ``GRIB_stepType`` attribute, or `None`.
+        - ``valid_time``: `datetime` from the ``valid_time`` coordinate, else
+          ``time + step``, else `None`.
+        - ``start_time`` / ``end_time``: if ``GRIB_stepRange`` is of the form
+          ``"a-b"`` (hours) and a ``time`` coordinate exists, these are the
+          reference time plus ``a`` and ``b`` hours. Otherwise, if
+          ``valid_time`` is known, ``start_time`` equals ``valid_time`` and
+          ``end_time`` is `None` (instantaneous grid). If neither applies,
+          both keys are absent.
+        - ``center``: ``da.herbie.center``, or `None` if unavailable.
+        - ``source_crs``: ``str(da.herbie.crs)``, or `None` if unavailable.
+
 
     Raises
     ------
     ValueError
-        If `ds` is a `Dataset` with no data variables, if `var_name` is
-        given but not present in the dataset, or if the extracted field
-        cannot be squeezed down to exactly 2 dimensions.
+        If `ds` is a `Dataset` with no data variables, or if `var_name` is
+        given but is not one of its data variables.
+
+
+    Notes
+    -----
+    Timing is read from the original Herbie output, and all datetimes are
+    UTC-naive. Native bounds (``lat_min`` etc.), grid-system information
+    and final array shape are not produced by this function.
     """
     import xarray as xr
 
@@ -354,6 +425,46 @@ def _gdal_warp_options(
     boundary: Path | BBox | None,
     epsg: int | None,
 ) -> dict:
+    """
+    Build the keyword arguments for ``gdal.WarpOptions`` that crop or clip a
+    raster to a boundary.
+
+
+    Parameters
+    ----------
+    boundary : Path or BBox or None
+        - `None`: no spatial restriction.
+        - `Path`: vector file (shapefile, GeoJSON, etc.) used as a cutline.
+        - `BBox` (any 4-tuple): ``(xmin, ymin, xmax, ymax)`` output bounds.
+    epsg : int or None
+        EPSG code of the boundary coordinates. Required for a bounding box.
+        For a vector file it is optional and, if given, is used as the cutline
+        SRS (otherwise GDAL uses the SRS stored in the file).
+
+
+    Returns
+    -------
+    dict
+        - `{}` if `boundary` is `None`.
+        - For a `Path`: ``cutlineDSName``, ``cropToCutline=True`` and
+          ``warpOptions=["CUTLINE_ALL_TOUCHED=TRUE"]`` (cells touched by the
+          polygon are kept), plus ``cutlineSRS`` when `epsg` is set.
+        - For a bounding box: ``outputBounds`` and ``outputBoundsSRS``
+          (``"EPSG:<epsg>"``).
+
+
+    Raises
+    ------
+    FileNotFoundError
+        If `boundary` is a `Path` that does not exist.
+    ValueError
+        If `boundary` is a tuple that does not have four elements.
+    typer.BadParameter
+        If `boundary` is a bounding box and `epsg` is `None` (hint:
+        ``--bbox-epsg``).
+    TypeError
+        If `boundary` is of any other type.
+    """
     if boundary is None:
         return {}
 
@@ -385,6 +496,32 @@ def _gdal_warp_options(
 
 
 def _dss_undefined_cells(data: np.ndarray, nodata) -> np.ndarray:
+    """
+    Replace nodata and NaN cells with ``DSS_UNDEFINED_VALUE``, in place.
+
+
+    Parameters
+    ----------
+    data : numpy.ndarray
+        Array to modify. It is mutated directly, not copied, and must be of a
+        dtype that can hold ``DSS_UNDEFINED_VALUE``.
+    nodata : float or None
+        Sentinel nodata value, matched by exact equality. Ignored if `None`.
+        A NaN sentinel never matches by equality; NaN cells are handled by the
+        separate NaN check.
+
+
+    Returns
+    -------
+    numpy.ndarray
+        The same array object passed in, after replacement.
+
+
+    See Also
+    --------
+    _to_dss_undefined : Non-mutating variant that also handles infinities and
+        uses a tolerance when matching nodata values.
+    """
     if nodata is not None:
         data[data == nodata] = DSS_UNDEFINED_VALUE
     data[np.isnan(data)] = DSS_UNDEFINED_VALUE
@@ -396,6 +533,30 @@ def _to_dss_undefined(
     data: np.ndarray,
     *nodata_values: float | None,
 ) -> np.ndarray:
+    """
+    Return a float32 copy of `data` with invalid cells set to
+    ``DSS_UNDEFINED_VALUE``.
+
+
+    A cell is treated as invalid if it is non-finite (NaN, +inf or -inf) or
+    matches any of the supplied nodata values. Finite nodata values are
+    matched with `numpy.isclose` (default tolerances); a NaN nodata value
+    matches NaN cells.
+
+
+    Parameters
+    ----------
+    data : numpy.ndarray
+        Input array. It is not modified; it is converted to float32 and copied.
+    *nodata_values : float or None
+        Zero or more additional nodata sentinels. `None` entries are skipped.
+
+
+    Returns
+    -------
+    numpy.ndarray
+        New float32 array of the same shape as `data`.
+    """
     result = np.asarray(data, dtype=np.float32).copy()
 
     invalid = ~np.isfinite(result)
